@@ -5,6 +5,8 @@ from mjengine.utils import is_winning, tid_to_unicode
 
 class Player:
     def __init__(self, strategy: Strategy = RandomStrategy()) -> None:
+        self.game = None
+        self.position = None
         self.hand = []
         self.discards = []
         self.exposed = []
@@ -28,21 +30,21 @@ class Player:
             return ' '.join([tid_to_unicode(tid) for tid in sorted(self.hand)])
         return ' '.join([tid_to_unicode(tid) for tid in self.hand])
     
-    def draw(self, wall: list[int], n: int=1) -> list[int]:
-        self.hand += wall[:n]
-        del wall[:n]
-        return self.hand[-n:]
+    def draw(self, tiles: list[int]) -> None:
+        self.hand.extend(tiles)
     
     def examine(self) -> PlayerAction:
         if len(self.hand) % 3 != 2:
             raise ValueError("Only hand after drawing can be examined")
         return self.strategy(self.hand)
 
-    def discard(self) -> int:
-        index, tile = self.strategy(self.hand, discard=True)
-        self.hand = self.hand[:index] + self.hand[index + 1 :]
-        self.discards.append(tile)
+    def select_discard(self) -> int:
+        _, tile = self.strategy(self.hand, discard=True)
         return tile
+    
+    def discard(self, tile: int) -> None:
+        self.hand.remove(tile)
+        self.discards.append(tile)
 
     def is_winning(self) -> bool:
         return is_winning(self.hand)

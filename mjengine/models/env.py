@@ -2,7 +2,7 @@ import gymnasium as gym
 from gymnasium.spaces import Space, Dict, Discrete, MultiDiscrete, MultiBinary
 import numpy as np
 
-from mjengine.constants import GameStatus
+from mjengine.constants import GameStatus, PlayerAction
 from mjengine.game import Game
 from mjengine.utils import distance_to_ready
 
@@ -33,6 +33,17 @@ MAHJONG_OBSERVATION_SPACE = Dict({
 })
 
 
+"""
+Action is encoded as a single integer (0 - 35).
+0 - 13: discard
+14 - 27: concealed kong
+28: win from self
+29 - 31: chow
+32: pong
+33: exposed kong
+34: win from chuck
+35: pass
+"""
 MAHJONG_ACTION_SPACE = Dict({
     "discard": Discrete(14),
     "concealed_kong": Discrete(14),
@@ -41,6 +52,7 @@ MAHJONG_ACTION_SPACE = Dict({
     "pong": MultiBinary(1),
     "exposed_kong": MultiBinary(1),
     "win_from_chuck": MultiBinary(1),
+    "pass": MultiBinary(1),
 })
 
 
@@ -50,13 +62,32 @@ def get_state(game: Game) -> np.ndarray:
     pass
 
 
-def action_to_dict(action: np.ndarray) -> dict:
-    pass
+def parse_action(action: int | np.ndarray) -> tuple[PlayerAction, int]:
+    if isinstance(action, np.ndarray):
+        action = action.flatten(order="C")
+        if len(action) != 36:
+            raise ValueError("Invalid array for action")
+        action = np.argmax(action)
+    if not isinstance(action, int):
+        raise ValueError("Invalid parameter type for action")
+    if action < 0 or action > 35:
+        raise ValueError("Invalid action")
+    if 0 <= action <= 13:
+        return None, action
+    elif 14 <= action <= 27:
+        return PlayerAction.KONG, action - 14
+    elif action == 28:
+        return PlayerAction.WIN, None
+    elif 29 <= action <= 31:
+        return PlayerAction.CHOW1 + action - 29, None
+    elif action == 32:
+        return PlayerAction.PONG, None
+    elif action == 33:
+        return PlayerAction.KONG, None
+    elif action == 34:
+        return PlayerAction.WIN, None
+    return PlayerAction.PASS, None
 
-
-def is_valid_action(action: dict) -> bool:
-    pass
-###############################################
 
 class MahjongEnv(gym.Env):
     def __init__(self):
@@ -68,13 +99,10 @@ class MahjongEnv(gym.Env):
 
     def step(self, action):
         reward = 0
-        action = action_to_dict(action)
-        if not is_valid_action(action):
-            reward = -10
-            return get_state(self.game), reward, False, False, {}
-        active_player = self.game.players[self.game.active_player]
         try:
-            self.game.next_action(action)
+            action, mode = parse_action(action)
+            active_player = self.game.players[self.game.active_player]
+            self.game.next_action(action=action, tile=tile)
         except ValueError:
             reward = -10
             return get_state(self.game), reward, False, False, {}
