@@ -1,3 +1,4 @@
+from collections import Counter
 import gymnasium as gym
 from gymnasium.spaces import Space, Dict, Discrete, MultiDiscrete, MultiBinary
 import numpy as np
@@ -7,18 +8,25 @@ from mjengine.game import Game
 from mjengine.utils import distance_to_ready
 
 
+"""
+position: 0 - 3, representing the player's position on table
+hand: 34 dimensions, representing the player's hand
+exposed: 56 dimensions, representing the player's exposed tiles and melds
+discards: 35 dimensions, representing the player's discards
+For discards and exposed, value 0 is reserved to represent the absence of tiles/melds
+"""
 MAIN_OBSERVATION_SPACE = Dict({
     "position": Discrete(4),
     "hand": MultiDiscrete([4] * 34),
-    "discards": MultiDiscrete([34] * 21),
-    "exposed": MultiDiscrete([55] * 4),
+    "exposed": MultiDiscrete([4] * 34),
+    "discards": MultiDiscrete([35] * 21),
 })
 
 
 OPPONENT_OBSERVATION_SPACE = Dict({
     "position": Discrete(4),
-    "discards": MultiDiscrete([34] * 21),
-    "exposed": MultiDiscrete([55] * 4),
+    "exposed": MultiDiscrete([4] * 34),
+    "discards": MultiDiscrete([35] * 21),
 })
 
 
@@ -56,10 +64,46 @@ MAHJONG_ACTION_SPACE = Dict({
 })
 
 
-#TODO
-###############################################
-def get_state(game: Game) -> np.ndarray:
-    pass
+def encode_tile(tid: int) -> int:
+    """
+    Encode tile ID to tile index
+    Compress the range of tile IDs to [1, 34]"""
+    if tid < 40:
+        return (tid // 10 - 1) * 9 + tid % 10
+    elif tid < 48:
+        return 28 + (tid - 40) // 2
+    else:
+        return 32 + (tid - 50) // 2
+    
+
+def get_state(game: Game, player: int) -> np.ndarray:
+    state = game.to_dict(as_player=player)
+    encoded_state = np.array([])
+    for i in range(4):
+        pid = (player + i) % 4
+        if i == 0:
+            encoded_hand = np.zeros(34, dtype=np.int32)
+            counter = Counter(state["players"][player]["hand"])
+            for tid, count in counter.items():
+                encoded_hand[encode_tile(tid) - 1] += count
+        else:
+            encoded_hand = np.array([])
+        encoded_exposed = np.zeros(34, dtype=np.int32)
+        for meld in state["players"][pid]["exposed"]:
+            for tid in meld:
+                encoded_exposed[encode_tile(tid) - 1] += 1
+        encoded_discards = np.zeros(21, dtype=np.int32)
+        for i, tid in enumerate(state["players"][pid]["discards"]):
+            encoded_discards[i] = encode_tile(tid)
+        encoded_state = np.concatenate([
+            encoded_state, [pid], 
+            encoded_hand, encoded_exposed,
+            encoded_discards]).astype(np.int32)
+    encoded_state = np.concatenate([
+        encoded_state, 
+        [state["wall"], state["dealer"], state["current_player"]]
+    ]).astype(np.int32)
+    return encoded_state
 
 
 def parse_action(action: int | np.ndarray) -> tuple[PlayerAction, int]:
@@ -90,9 +134,10 @@ def parse_action(action: int | np.ndarray) -> tuple[PlayerAction, int]:
 
 
 class MahjongEnv(gym.Env):
-    def __init__(self):
-        self.game = Game()
-        self.game.deal()
+    def __init__(self, game: Game, pid: int):
+        self.game = game
+        self.pid = pid
+        self.player = self.game.players[self.pid]
 
         self.action_space = Space()
         self.observation_space = MAHJONG_OBSERVATION_SPACE
@@ -100,19 +145,19 @@ class MahjongEnv(gym.Env):
     def step(self, action):
         reward = 0
         try:
-            action, mode = parse_action(action)
-            active_player = self.game.players[self.game.active_player]
-            self.game.next_action(action=action, tile=tile)
+            action, hand_index = parse_action(action)
+            tile = None if hand_index is None else self.player.hand[hand_index]
+            self.game.apply_action(action, [self.pid], tile)
         except ValueError:
             reward = -10
             return get_state(self.game), reward, False, False, {}
         if self.game.status == GameStatus.END:
-            if self.game.players[self.game.active_player].won:
+            if self.player.won:
                 reward = 10
             elif any([player.is_winning() for player in self.game.players]):
                 reward = -10
             return get_state(self.game), reward, True, False, {}
-        reward = 7 - distance_to_ready(active_player.hand)
+        reward = 7 - distance_to_ready(self.player.hand)
         return get_state(self.game), reward, False, False, {}
 
     def reset(self, *, seed=None, options=None):

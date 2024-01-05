@@ -201,4 +201,17 @@ class Game:
         for i in range(4):
             print(f"{i}\t{self.players[i].score}\t{self.players[i].wins}\t"
                   f"{self.players[i].self_wins}\t{self.players[i].chucks}")
+            
+    def to_dict(self, as_player: int | None = None) -> dict:
+        """Return a dict representation of the game.
+        """
+        return {
+            "wall": len(self.wall),
+            "dealer": self.dealer,
+            "round": self.round,
+            "status": self.status,
+            "active_player": self.active_player,
+            "players": [p.to_dict(hide_hand=(as_player is not None and i != as_player)) 
+                        for i, p in enumerate(self.players)]
+        }
     

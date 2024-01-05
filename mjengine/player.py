@@ -75,6 +75,18 @@ class Player:
         self.hand = [tid for tid in self.hand if tid != tile]
         self.exposed.append([tile, tile, tile, tile])
 
+    def to_dict(self, hide_hand=False) -> dict:
+        return {
+            "hand": [0 for _ in range(len(self.hand))] if hide_hand else self.hand,
+            "discards": self.discards,
+            "exposed": self.exposed,
+            "won": self.won,
+            "score": self.score,
+            "wins": self.wins,
+            "self_wins": self.self_wins,
+            "chucks": self.chucks,
+        }
+
 
 def make_player(strategy: str) -> Player:
     if strategy == "random":
