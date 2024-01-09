@@ -1,4 +1,5 @@
 from mjengine.constants import PlayerAction
+from mjengine.option import Option
 from mjengine.strategy import ClosestReadyStrategy, RandomStrategy, Strategy
 from mjengine.utils import is_winning, tid_to_unicode
 
@@ -32,12 +33,24 @@ class Player:
     
     def draw(self, tiles: list[int]) -> None:
         self.hand.extend(tiles)
+
+    def decide(self, option: Option, last_discard: int | None = None) -> tuple[PlayerAction, int]:
+        if last_discard is not None:
+            action, _ = self.acquire(last_discard, option)
+            return action, last_discard
+        if option.discard:
+            return None, self.select_discard()
+        action, tile = self.examine(option)
+        return action, tile
     
-    def examine(self) -> PlayerAction:
+    def examine(self, option: Option | None = None) -> tuple[PlayerAction, int]:
         if len(self.hand) % 3 != 2:
             raise ValueError("Only hand after drawing can be examined")
-        return self.strategy(self.hand)
-
+        return self.strategy(self.hand, discard=False, option=option)
+    
+    def acquire(self, tile: int, option: Option) -> tuple[PlayerAction, int]:
+        return self.strategy(self.hand, discard=False, tile=tile, option=option)
+    
     def select_discard(self) -> int:
         _, tile = self.strategy(self.hand, discard=True)
         return tile
@@ -48,9 +61,6 @@ class Player:
 
     def is_winning(self) -> bool:
         return is_winning(self.hand)
-    
-    def acquire(self, tile: int, options: list[bool]) -> PlayerAction:
-        return self.strategy(self.hand, tile=tile, options=options)[0]
     
     def chow(self, tile: int, mode: int) -> None:
         if mode == PlayerAction.CHOW1:

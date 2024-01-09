@@ -1,6 +1,7 @@
 from collections import Counter
 import gymnasium as gym
-from gymnasium.spaces import Space, Dict, Discrete, MultiDiscrete, MultiBinary
+from gymnasium.spaces import Dict, Discrete, MultiDiscrete, MultiBinary
+from gymnasium.spaces.utils import flatten_space
 import numpy as np
 
 from mjengine.constants import GameStatus, PlayerAction
@@ -53,8 +54,8 @@ Action is encoded as a single integer (0 - 35).
 35: pass
 """
 MAHJONG_ACTION_SPACE = Dict({
-    "discard": Discrete(14),
-    "concealed_kong": Discrete(14),
+    "discard": Discrete(34),
+    "concealed_kong": Discrete(34),
     "win_from_self": MultiBinary(1),    
     "chow": Discrete(3),
     "pong": MultiBinary(1),
@@ -134,13 +135,11 @@ def parse_action(action: int | np.ndarray) -> tuple[PlayerAction, int]:
 
 
 class MahjongEnv(gym.Env):
-    def __init__(self, game: Game, pid: int):
+    def __init__(self, game: Game):
         self.game = game
-        self.pid = pid
-        self.player = self.game.players[self.pid]
 
-        self.action_space = Space()
-        self.observation_space = MAHJONG_OBSERVATION_SPACE
+        self.action_space = flatten_space(MAHJONG_ACTION_SPACE)
+        self.observation_space = flatten_space(MAHJONG_OBSERVATION_SPACE)
 
     def step(self, action):
         reward = 0
@@ -153,7 +152,7 @@ class MahjongEnv(gym.Env):
             return get_state(self.game), reward, False, False, {}
         if self.game.status == GameStatus.END:
             if self.player.won:
-                reward = 10
+                reward = 100
             elif any([player.is_winning() for player in self.game.players]):
                 reward = -10
             return get_state(self.game), reward, True, False, {}
@@ -162,7 +161,7 @@ class MahjongEnv(gym.Env):
 
     def reset(self, *, seed=None, options=None):
         self.game.reset()
-        self.game.deal()
+        self.game.start_game()
         return get_state(self.game), {}
 
     def render(self):

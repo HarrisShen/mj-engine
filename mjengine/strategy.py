@@ -2,34 +2,51 @@ from abc import ABC, abstractmethod
 from collections import Counter
 import random
 from mjengine.constants import PlayerAction
+from mjengine.option import Option
 from mjengine.utils import can_chow, can_kong, can_pong, distance_to_ready, is_winning
 
 
 class Strategy(ABC):
-    def __call__(self, hand, discard=False, tile=None, options=None):
+    def __call__(
+            self, hand, discard=False, tile=None, 
+            option: Option | None = None) -> tuple[PlayerAction, int]:
         # discard mode
         if discard:
             return self.discard(hand)
         
         # examine hand
         if tile is None:
-            if is_winning(hand):
-                return self.win(hand)
-            if can_kong(hand):
-                return self.kong(hand)
+            if option is None:
+                raise ValueError("options must be specified when examining hand")
+            if option.win_from_self:
+                action, win_tile = self.win(hand)
+                if action == PlayerAction.WIN:
+                    return action, win_tile
+            if option.concealed_kong:
+                action, kong_tile = self.kong(hand, option.concealed_kong)
+                if action == PlayerAction.KONG:
+                    return action, kong_tile
             return PlayerAction.PASS, 0
             
         # consider acquiring
-        if options is None:
+        if option is None:
             raise ValueError("options must be specified when considering acquiring")
-        if options[3] and is_winning(hand + [tile]):
-            return self.win(hand, tile)
-        if options[2] and can_kong(hand, tile):
-            return self.kong(hand, tile)
-        if options[1] and can_pong(hand, tile):
-            return self.pong(hand, tile)
-        if options[0]:
-            return self.chow(hand, tile)
+        if option.win_from_chuck:
+            action, _ = self.win(hand, tile)
+            if action == PlayerAction.WIN:
+                return action, tile
+        if option.exposed_kong:
+            action, _ = self.kong(hand, [tile])
+            if action == PlayerAction.KONG:
+                return action, tile
+        if option.pong:
+            action, _ = self.pong(hand, tile)
+            if action == PlayerAction.PONG:
+                return action, tile
+        if option.chow[0]:
+            action, _ = self.chow(hand, tile, option=option.chow)
+            if action != PlayerAction.PASS:
+                return action, tile
         return PlayerAction.PASS, 0
     
     @abstractmethod
@@ -42,7 +59,7 @@ class Strategy(ABC):
         return PlayerAction.WIN, tile
 
     @abstractmethod
-    def kong(self, hand, tile=None):
+    def kong(self, hand, tiles=None):
         pass
 
     @abstractmethod
@@ -50,7 +67,7 @@ class Strategy(ABC):
         pass
 
     @abstractmethod
-    def chow(self, hand, tile):
+    def chow(self, hand, tile, option):
         pass
 
 
@@ -60,19 +77,17 @@ class RandomStrategy(Strategy):
         index = random.randrange(len(hand))
         return index, hand[index]
     
-    def kong(self, hand, tile=None):
-        if tile is None:
-            tile = Counter(hand).most_common(1)[0][0]
-        return PlayerAction.KONG, tile
+    def kong(self, hand, tiles=None):
+        if tiles is None:
+            tiles = [t for t in hand if hand.count(t) == 4]
+        return PlayerAction.KONG, random.choice(tiles)
     
     def pong(self, hand, tile):
         return PlayerAction.PONG, tile
     
-    def chow(self, hand, tile):
-        chow_test = can_chow(hand, tile)
-        if chow_test[0]:
-            return random.choice([i for i in range(1, 4) if chow_test[i]]), tile
-        return PlayerAction.PASS, 0
+    def chow(self, hand, tile, option):
+        # return random.choice([i for i in range(1, 4) if option]), tile
+        return random.choice([i for i in range(1, 4) if option[i]]), tile
 
 
 class ClosestReadyStrategy(Strategy):
@@ -96,12 +111,10 @@ class ClosestReadyStrategy(Strategy):
             index = random.choice(indices)
             return index, hand[index]
     
-    def kong(self, hand, tile=None):
-        if tile is None:
-            candidates = [t for t in hand if hand.count(t) == 4]
-        else:
-            candidates = [tile]
-        for tile in candidates:
+    def kong(self, hand, tiles=None):
+        if tiles is None:
+            tiles = [t for t in hand if hand.count(t) == 4]
+        for tile in tiles:
             post_hand = [t for t in hand if t != tile]
             if distance_to_ready(post_hand) <= distance_to_ready(hand):
                 return PlayerAction.KONG, tile
@@ -115,31 +128,28 @@ class ClosestReadyStrategy(Strategy):
             return PlayerAction.PONG, tile
         return PlayerAction.PASS, 0
     
-    def chow(self, hand, tile):
-        chow_test = can_chow(hand, tile)
-        if chow_test[0]:
-            distances = [distance_to_ready(hand), 14, 14, 14]
-            if chow_test[1]:
-                post_hand = hand.copy()
-                post_hand.remove(tile - 2)
-                post_hand.remove(tile - 1)
-                distances[1] = distance_to_ready(post_hand)
-            if chow_test[2]:
-                post_hand = hand.copy()
-                post_hand.remove(tile - 1)
-                post_hand.remove(tile + 1)
-                distances[2] = distance_to_ready(post_hand)
-            if chow_test[3]:
-                post_hand = hand.copy()
-                post_hand.remove(tile + 1)
-                post_hand.remove(tile + 2)
-                distances[3] = distance_to_ready(post_hand)
-            best_dist = min(distances[1:])
-            decision = PlayerAction.PASS
-            if best_dist <= distance_to_ready(hand):
-                decision = random.choice([i for i, d in enumerate(distances) if i and d == best_dist])
-            return decision, tile
-        return PlayerAction.PASS, 0
+    def chow(self, hand, tile, option):
+        distances = [distance_to_ready(hand), 14, 14, 14]
+        if option[1]:
+            post_hand = hand.copy()
+            post_hand.remove(tile - 2)
+            post_hand.remove(tile - 1)
+            distances[1] = distance_to_ready(post_hand)
+        if option[2]:
+            post_hand = hand.copy()
+            post_hand.remove(tile - 1)
+            post_hand.remove(tile + 1)
+            distances[2] = distance_to_ready(post_hand)
+        if option[3]:
+            post_hand = hand.copy()
+            post_hand.remove(tile + 1)
+            post_hand.remove(tile + 2)
+            distances[3] = distance_to_ready(post_hand)
+        best_dist = min(distances[1:])
+        decision = PlayerAction.PASS
+        if best_dist <= distance_to_ready(hand):
+            decision = random.choice([i for i, d in enumerate(distances) if i and d == best_dist])
+        return decision, tile
         
 
 def tile_value(hand: list[int], tile: int):
