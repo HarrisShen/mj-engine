@@ -1,13 +1,16 @@
 from collections import deque
 import random
-from mjengine.constants import GameStatus, PlayerAction
+from mjengine.constants import TID_LIST, GameStatus, PlayerAction
 from mjengine.option import Option
 from mjengine.player import Player
-from mjengine.utils import TID_LIST, can_chow, can_kong, can_pong, is_winning, tid_to_unicode
+from mjengine.utils import can_chow, can_kong, can_pong, is_winning, tid_to_unicode
 
 
 class Game:
-    def __init__(self, players: list[Player] | None = None, round_limit: int = 1) -> None:
+    def __init__(
+            self, 
+            players: list[Player] | None = None, 
+            round_limit: int = 1) -> None:
         self.round_limit = round_limit
 
         self.wall = []
@@ -16,20 +19,12 @@ class Game:
         self.status = GameStatus.START
         if players is None:
             players = [Player() for _ in range(4)]
-        self.register(players)
+        self.players = players
         self.current_player = 0
         self.decisions = [None for _ in range(4)]
         self.options = []
         self.acting_queue = None
         self.waiting = []
-
-    def register(self, players: list[Player]) -> None:
-        if len(players) != 4:
-            raise ValueError("Game requires 4 players")
-        self.players = players
-        for i in range(4):
-            self.players[i].game = self
-            self.players[i].position = i
 
     def reset(self) -> None:
         self.wall = []
@@ -81,6 +76,7 @@ class Game:
     def play(self) -> None:
         while self.round < self.round_limit:
             self.reset()
+            print(f"Round {self.round} - Dealer is Player {self.dealer} now.")
             self.start_game()
             while self.status < GameStatus.END:
                 player, option, last_discard = self.get_option()
@@ -92,10 +88,6 @@ class Game:
                 # end of a round
                 if self.dealer == 0:
                     self.round += 1
-                print(f"Round {self.round} - Dealer is Player {self.dealer} now.")
-
-    def get_last_discard(self) -> int:
-        return self.players[self.current_player].discards[-1]
 
     def get_option(self) -> tuple[int, Option, int | None]:
         """
@@ -152,11 +144,7 @@ class Game:
         pid, option = self.acting_queue.popleft()
         return pid, option, last_discard
 
-    def apply_action(
-            self, 
-            action: PlayerAction, 
-            player: int, 
-            tile: int | None) -> None:
+    def apply_action(self, action: PlayerAction, player: int, tile: int | None) -> None:
         if action is None:
             if self.status != GameStatus.DISCARD:
                 raise ValueError("Invalid action")
@@ -237,83 +225,6 @@ class Game:
                 return
 
         raise ValueError("Invalid action")
-
-    def get_next_action(self) -> tuple[PlayerAction, list[int], int]:
-        if self.status == GameStatus.START:
-            raise ValueError("Game is not ready to play, please deal first")
-        
-        # draw a tile and check winning
-        if self.status == GameStatus.DRAW:
-            last_draw = self.deal(self.current_player, 1)[0]
-            print(f"Player {self.current_player} draws {tid_to_unicode(last_draw)}")
-            print(f"Player {self.current_player}:", self.players[self.current_player].hand_to_str())
-            action, tile = self.players[self.current_player].examine()
-            return action, [self.current_player], tile
-
-        # discard a tile
-        if self.status == GameStatus.DISCARD:
-            tile = self.players[self.current_player].select_discard()
-            return None, [self.current_player], tile
-
-        # check chow, pong, kong and chuck (winning from others' discards)
-        if self.acting_queue is None:
-            self.evaluate_options()
-        last_discard = self.players[self.current_player].discards[-1]
-        if self.acting_queue:
-            active_player = self.acting_queue[0]
-            option = self.options[active_player]
-            action = self.players[active_player].acquire(last_discard, option)
-            return action, [active_player], last_discard
-        self.acting_queue = None
-        self.status = GameStatus.DRAW
-        return self.get_next_action()
-        
-        # decisions = [PlayerAction.PASS for _ in range(4)]
-        # for i in range(4):
-        #     if i == self.current_player:
-        #         continue
-        #     # decide whether options are available - chow, pong, kong, chuck
-        #     hand = self.players[i].hand
-        #     if i == (self.current_player + 1) % 4 and can_chow(hand, last_discard):
-        #         self.acting_players[3].append(self.current_player)
-        #     if can_pong(hand, last_discard):
-        #         self.acting_players[2].append(self.current_player)
-        #     if can_kong(hand, last_discard):
-        #         self.acting_players[1].append(self.current_player)
-        #     if is_winning(hand + [last_discard]):
-        #         self.acting_players[0].append(self.current_player)
-        #     if not any(options):
-        #         continue
-        #     decisions[i] = self.players[i].acquire(last_discard, options)
-        # fulfill decisions based on priority - win by chuck > kong > pong > chow
-        # action = max(decisions)
-        # acting_players = [i for i, d in enumerate(decisions) if d == action]
-        # return action, acting_players, last_discard
-    
-    # def evaluate_options(self) -> None:
-    #     self.acting_queue = deque()
-    #     self.options = [[] for _ in range(4)]
-    #     options = []
-    #     last_discard = self.players[self.current_player].discards[-1]
-    #     for i in range(4):
-    #         if i == self.current_player:
-    #             continue
-    #         # decide what options are available - chow, pong, kong, chuck
-    #         hand = self.players[i].hand
-    #         option = [
-    #             i == (self.current_player + 1) % 4 and can_chow(hand, last_discard),
-    #             can_pong(hand, last_discard),
-    #             can_kong(hand, last_discard),
-    #             is_winning(hand + [last_discard]),
-    #             i
-    #         ]
-    #         options.append(option)
-    #         self.options[i] = option[:4]
-    #     options.sort(reverse=True)
-    #     for option in options:
-    #         if not any(option[:4]):
-    #             break
-    #         self.acting_queue.append(option[4])
 
     def settle_score(self) -> None:
         # no one wins
