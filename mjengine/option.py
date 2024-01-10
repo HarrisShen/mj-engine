@@ -17,7 +17,7 @@ class Option:
         """
         Helper method to determine the priority of options.
         Note that only when considering tile from others', the tier is meaningful.
-        In multiple winners situation, the winner having only one option is prioritized.
+        In multiple-winner situation, the winner having only one option is prioritized.
         """
         if self.win_from_chuck:
             if self.exposed_kong or self.pong:

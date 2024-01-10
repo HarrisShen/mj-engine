@@ -1,4 +1,5 @@
 from collections import deque
+import logging
 import random
 from mjengine.constants import TID_LIST, GameStatus, PlayerAction
 from mjengine.option import Option
@@ -10,21 +11,36 @@ class Game:
     def __init__(
             self, 
             players: list[Player] | None = None, 
-            round_limit: int = 1) -> None:
+            round_limit: int | None = None,
+            game_limit: int | None = None,
+            verbose: bool = False) -> None:
         self.round_limit = round_limit
+        self.game_limit = game_limit
+        if self.round_limit is not None and self.game_limit is not None:
+            raise ValueError("Cannot set both round limit and game limit")
+        if self.game_limit is not None and self.game_limit < 1:
+            raise ValueError("Invalid game limit")
+        if self.round_limit is None and self.game_limit is None:
+            self.round_limit = 1
 
         self.wall = []
         self.dealer = 0
         self.round = 0
+        self.games = 0
         self.status = GameStatus.START
         if players is None:
             players = [Player() for _ in range(4)]
         self.players = players
         self.current_player = 0
-        self.decisions = [None for _ in range(4)]
-        self.options = []
+        self.acting_player = -1
+        self.option = None
         self.acting_queue = None
         self.waiting = []
+
+        if verbose:
+            logging.basicConfig(level=logging.DEBUG)
+        else:
+            logging.basicConfig(level=logging.WARNING)
 
     def reset(self) -> None:
         self.wall = []
@@ -45,7 +61,7 @@ class Game:
                 self.deal((i + self.dealer) % 4, 4)
         for i in range(4):
             self.deal((i + self.dealer) % 4, 1)
-            print(f"Player {(i + self.dealer) % 4}:", self.players[(i + self.dealer) % 4].hand_to_str())
+            logging.info(f"Player {(i + self.dealer) % 4}: {self.players[(i + self.dealer) % 4].hand_to_str()}")
 
         self.current_player = self.dealer
         self.status = GameStatus.DRAW
@@ -74,22 +90,33 @@ class Game:
     decisions that have the same or higher priority - e.g. multiple players can win by chuck.
     """
     def play(self) -> None:
-        while self.round < self.round_limit:
+        while not self.is_finished():
             self.reset()
-            print(f"Round {self.round} - Dealer is Player {self.dealer} now.")
+            logging.info(f"Round {self.round} - Dealer is Player {self.dealer} now.")
             self.start_game()
             while self.status < GameStatus.END:
-                player, option, last_discard = self.get_option()
-                action, tile = self.players[player].decide(option, last_discard)
-                self.apply_action(action, player, tile)
+                self.get_option()
+                last_discard = None
+                if self.status == GameStatus.CHECK:
+                    last_discard = self.players[self.current_player].discards[-1]
+                action, tile = self.players[self.acting_player].decide(self.option, last_discard)
+                self.apply_action(action, tile)
             self.settle_score()
             if not self.players[self.dealer].is_winning():
                 self.dealer = (self.dealer + 1) % 4
                 # end of a round
                 if self.dealer == 0:
                     self.round += 1
+            self.games += 1
 
-    def get_option(self) -> tuple[int, Option, int | None]:
+    def is_finished(self) -> bool:
+        if self.round_limit is not None and self.round >= self.round_limit:
+            return True
+        if self.game_limit is not None and self.games >= self.game_limit:
+            return True
+        return False
+
+    def get_option(self) -> None:
         """
         Return:
             player: the player who should make decision
@@ -102,20 +129,27 @@ class Game:
         # draw a tile and check winning
         if self.status == GameStatus.DRAW:
             last_draw = self.deal(self.current_player, 1)[0]
-            print(f"Player {self.current_player} draws {tid_to_unicode(last_draw)}")
-            print(f"Player {self.current_player}:", self.players[self.current_player].hand_to_str())
+            logging.info(f"Player {self.current_player} draws {tid_to_unicode(last_draw)} " 
+                         f"(Tiles in wall - {len(self.wall)})")
+            logging.info(f"Player {self.current_player}: {self.players[self.current_player].hand_to_str()}")
             hand = self.players[self.current_player].hand
             kong_tiles = [tid for tid in set(hand) if hand.count(tid) == 4]
+            if not self.wall:  # unable to kong if no tile to draw
+                kong_tiles = []
             self_win = is_winning(hand)
             if self_win or kong_tiles:
                 option = Option(concealed_kong=kong_tiles, win_from_self=self_win)
-                return self.current_player, option, None
+                self.acting_player = self.current_player
+                self.option = option
+                return
             self.status = GameStatus.DISCARD
 
         # discard a tile
         if self.status == GameStatus.DISCARD:
             option = Option(discard=True)
-            return self.current_player, option, None
+            self.acting_player = self.current_player
+            self.option = option
+            return
 
         # check chow, pong, kong and chuck (winning from others' discards)
         last_discard = self.players[self.current_player].discards[-1]
@@ -128,7 +162,7 @@ class Game:
                 option = Option(
                     chow=can_chow(hand, last_discard) if i == 1 else [False, False, False, False],
                     pong=can_pong(hand, last_discard),
-                    exposed_kong=can_kong(hand, last_discard),
+                    exposed_kong=can_kong(hand, last_discard) and self.wall,
                     win_from_chuck=is_winning(hand + [last_discard])
                 )
                 if option.tier() > (0, 0):
@@ -140,19 +174,20 @@ class Game:
             self.acting_queue = None
             self.current_player = (self.current_player + 1) % 4
             self.status = GameStatus.DRAW
-            return self.get_option()
-        pid, option = self.acting_queue.popleft()
-        return pid, option, last_discard
+            self.get_option()
+            return
+        self.acting_player, self.option = self.acting_queue.popleft()
 
-    def apply_action(self, action: PlayerAction, player: int, tile: int | None) -> None:
+    def apply_action(self, action: PlayerAction, tile: int | None) -> None:
+        player = self.acting_player
         if action is None:
             if self.status != GameStatus.DISCARD:
                 raise ValueError("Invalid action")
             self.players[player].discard(tile)
-            print(f"Player {player} discards {tid_to_unicode(tile)}")
-            print(f"Player {player}:", self.players[player].hand_to_str())
+            logging.info(f"Player {player} discards {tid_to_unicode(tile)}")
+            logging.info(f"Player {player}: {self.players[player].hand_to_str()}")
             if not self.wall:
-                print("Wall is empty!")
+                logging.info("Wall is empty!")
                 self.status = GameStatus.END
                 return
             self.status = GameStatus.CHECK
@@ -163,13 +198,13 @@ class Game:
             if not is_winning(hand) and not is_winning(hand + [tile]):
                 raise ValueError("Invalid action")
         elif action == PlayerAction.KONG:
-            if not can_kong(self.players[player].hand, tile):
+            if tile is None or not can_kong(self.players[player].hand, tile):
                 raise ValueError("Invalid action")
         elif action == PlayerAction.PONG:
-            if not can_pong(self.players[player].hand, tile):
+            if tile is None or not can_pong(self.players[player].hand, tile):
                 raise ValueError("Invalid action")
         elif action > PlayerAction.PASS:  # chow
-            if not can_chow(self.players[player].hand, tile)[0]:
+            if tile is None or not can_chow(self.players[player].hand, tile)[0]:
                 raise ValueError("Invalid action")
         self.waiting.append((player, action))
 
@@ -187,28 +222,28 @@ class Game:
         if action == PlayerAction.WIN:
             for i in acting_players:
                 self.players[i].won = True
-                print(f"Player {i} wins!")
-                print(f"Player {i}:", self.players[i].hand_to_str())
+                logging.info(f"Player {i} wins!")
+                logging.info(f"Player {i}: {self.players[i].hand_to_str()}")
             self.status = GameStatus.END
             return
         
         if action == PlayerAction.KONG:
             self.players[acting_players[0]].kong(tile)
-            print(f"Player {acting_players[0]} kongs!")
+            logging.info(f"Player {acting_players[0]} kongs!")
             self.current_player = acting_players[0]
             self.status = GameStatus.DRAW
             return
         
         if action == PlayerAction.PONG:
             self.players[acting_players[0]].pong(tile)
-            print(f"Player {acting_players[0]} pongs!")
+            logging.info(f"Player {acting_players[0]} pongs!")
             self.current_player = acting_players[0]
             self.status = GameStatus.DISCARD
             return
         
         if action > PlayerAction.PASS:  # chow
             self.players[acting_players[0]].chow(tile, action)
-            print(f"Player {acting_players[0]} chows!")
+            logging.info(f"Player {acting_players[0]} chows!")
             self.current_player = acting_players[0]
             self.status = GameStatus.DISCARD
             return
@@ -253,10 +288,10 @@ class Game:
     def score_summary(self) -> None:
         """Print the score summary of the game in a table format.
         """
-        print("P\tScore\tW\tSW\tC")
+        logging.info("P\tScore\tW\tSW\tC")
         for i in range(4):
-            print(f"{i}\t{self.players[i].score}\t{self.players[i].wins}\t"
-                  f"{self.players[i].self_wins}\t{self.players[i].chucks}")
+            logging.info(f"{i}\t{self.players[i].score}\t{self.players[i].wins}\t"
+                         f"{self.players[i].self_wins}\t{self.players[i].chucks}")
             
     def to_dict(self, as_player: int | None = None) -> dict:
         """Return a dict representation of the game.
@@ -266,7 +301,7 @@ class Game:
             "dealer": self.dealer,
             "round": self.round,
             "status": self.status,
-            "active_player": self.current_player,
+            "current_player": self.current_player,
             "players": [p.to_dict(hide_hand=(as_player is not None and i != as_player)) 
                         for i, p in enumerate(self.players)]
         }

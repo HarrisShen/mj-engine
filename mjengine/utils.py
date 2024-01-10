@@ -16,7 +16,7 @@ def tid_to_name(tid: int) -> str:
     51: Red, 53: Green, 55: White
     """
     suit_id, rank_id = tid // 10, tid % 10
-    suit_name = {1: 'B', 2: 'C', 3: 'D', 4: 'W', 5: 'D'}
+    suit_name = {1: 'M', 2: 'S', 3: 'P', 4: 'W', 5: 'D'}
     if suit_id == 4:
         wind_name = {1: 'E', 3: 'S', 5: 'W', 7: 'N'}
         return suit_name[suit_id] + wind_name[rank_id]
@@ -31,7 +31,7 @@ def name_to_tid(name: str) -> int:
     The name is a string of the form "B1", "C5", "D9", "WE", "WS", "DR"
     """
     suit_name, rank_name = name[0], name[1:]
-    suit_id = {'B': 1, 'C': 2, 'D': 3, 'W': 4, 'D': 5}[suit_name]
+    suit_id = {'M': 1, 'S': 2, 'P': 3, 'W': 4, 'D': 5}[suit_name]
     if suit_id == 4:
         wind_id = {'E': 1, 'S': 3, 'W': 5, 'N': 7}[rank_name]
         return suit_id * 10 + wind_id
@@ -59,20 +59,12 @@ def is_valid(tid: int) -> bool:
     return tid in TID_SET
 
 
-def is_valid_hand(hand: list[int]) -> bool:
-    """Return True if the hand is valid, False otherwise.
-    A valid hand must have 14 tiles, and each tile must be valid.
-    """
-    if hand % 3 == 0:
-        return False
-    return all(is_valid(tid) for tid in hand)
-
-
 def is_winning(hand: list[int]) -> bool:
     """Return True if the hand is a winning hand, False otherwise.
     A winning hand must have one pair of same tiles, with the rest of the tiles
     forming melds (triplets or sequences).
     """
+    hand = [t for t in hand if t is not None]
     if len(hand) % 3 != 2:
         return False
     return _is_winning(Counter(hand))
@@ -187,13 +179,14 @@ def distance_to_ready(hand: list[int]) -> int:
     return distance
 
 
-def distance_to_melds(hand: list[int], memo: dict | None = None) -> int:
+def distance_to_melds(hand: Counter, memo: dict | None = None) -> int:
     """Return the distance to melds of the hand.
     The distance to melds is the smallest number of changes to make the hand
     into all melds - without overlapping tiles between melds.
     """
     if memo is None:
         memo = {}
+
     def _get_distance(counter: Counter[int], n: int) -> int:
         if n == 0:
             return 0
@@ -234,8 +227,9 @@ def distance_to_melds(hand: list[int], memo: dict | None = None) -> int:
 
         return memo[hand]
 
-    counter, n = Counter(hand), len(hand) // 3
-    return _get_distance(counter, n)
+    # counter, n = Counter(hand), len(hand) // 3
+    n = sum(hand.values()) // 3
+    return _get_distance(hand, n)
 
 
 def counter_to_hand(counter: Counter[int], sort=True, reverse=False) -> list[int]:
