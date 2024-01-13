@@ -188,6 +188,7 @@ class MahjongEnv(gym.Env):
         action_code, tile = parse_action(action)
         if 67 < action < 75:
             tile = self.game.players[self.game.current_player].discards[-1]
+        old_hand = self.game.players[self.game.acting_player].hand.copy()
         try:
             self.game.apply_action(action_code, tile)
         except ValueError:
@@ -204,7 +205,7 @@ class MahjongEnv(gym.Env):
             elif any([player.is_winning() for player in self.game.players]):
                 reward = -10
             return get_state(self.game), reward, True, False, {"option": None, "next_player_state": None}
-        reward = 7 - distance_to_ready(player.hand)
+        reward = distance_to_ready(old_hand) - distance_to_ready(player.hand)
         state = get_state(self.game)
         self.game.get_option()
         next_player_state = get_state(self.game)

@@ -4,7 +4,8 @@ import random
 from mjengine.constants import TID_LIST, GameStatus, PlayerAction
 from mjengine.option import Option
 from mjengine.player import Player
-from mjengine.utils import can_chow, can_kong, can_pong, is_winning, tid_to_unicode
+from mjengine.tiles import tid_to_unicode
+from mjengine.utils import can_chow, can_kong, can_pong, is_winning_old
 
 
 class Game:
@@ -133,10 +134,10 @@ class Game:
                          f"(Tiles in wall - {len(self.wall)})")
             logging.info(f"Player {self.current_player}: {self.players[self.current_player].hand_to_str()}")
             hand = self.players[self.current_player].hand
-            kong_tiles = [tid for tid in set(hand) if hand.count(tid) == 4]
+            kong_tiles = [tid for tid in range(len(hand)) if hand[tid] == 4]
             if not self.wall:  # unable to kong if no tile to draw
                 kong_tiles = []
-            self_win = is_winning(hand)
+            self_win = is_winning_old(hand)
             if self_win or kong_tiles:
                 option = Option(concealed_kong=kong_tiles, win_from_self=self_win)
                 self.acting_player = self.current_player
@@ -163,7 +164,7 @@ class Game:
                     chow=can_chow(hand, last_discard) if i == 1 else [False, False, False, False],
                     pong=can_pong(hand, last_discard),
                     exposed_kong=can_kong(hand, last_discard) and self.wall,
-                    win_from_chuck=is_winning(hand + [last_discard])
+                    win_from_chuck=is_winning_old(hand + [last_discard])
                 )
                 if option.tier() > (0, 0):
                     options.append((pid, option))
@@ -195,7 +196,7 @@ class Game:
         
         hand = self.players[player].hand
         if action == PlayerAction.WIN:
-            if not is_winning(hand) and not is_winning(hand + [tile]):
+            if not is_winning_old(hand) and not is_winning_old(hand + [tile]):
                 raise ValueError("Invalid action")
         elif action == PlayerAction.KONG:
             if tile is None or not can_kong(self.players[player].hand, tile):

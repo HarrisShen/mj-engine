@@ -1,65 +1,115 @@
 from collections import Counter
-from mjengine.constants import TID_LIST, TID_SET
+from mjengine.constants import TID_LIST
 
 
-def tid_to_name(tid: int) -> str:
-    """Return the name of the tile with the given tid.
-    The tid is a number between 11 and 55, inclusive.
-    The first digit represents the suit, and the second digit represents the
-    rank (1-9). The suits are:
-    1: Bamboo
-    2: Character
-    3: Dot
-    For Winds, the numbers are:
-    41: East, 43: South, 45: West, 47: North
-    For Dragons, the numbers are:
-    51: Red, 53: Green, 55: White
-    """
-    suit_id, rank_id = tid // 10, tid % 10
-    suit_name = {1: 'M', 2: 'S', 3: 'P', 4: 'W', 5: 'D'}
-    if suit_id == 4:
-        wind_name = {1: 'E', 3: 'S', 5: 'W', 7: 'N'}
-        return suit_name[suit_id] + wind_name[rank_id]
-    if suit_id == 5:
-        dragon_name = {1: 'R', 3: 'G', 5: 'W'}
-        return suit_name[suit_id] + dragon_name[rank_id]
-    return suit_name[suit_id] + str(rank_id)
+def can_chow(hand: list[int], tile: int) -> list[bool]:
+    result = [False for _ in range(4)]
+    if tile > 27 or tile < 0:
+        return result
+    suit = tile // 9
+    result[1] = (tile - 2) // 9 == suit and (tile - 1) // 9 == suit and hand[tile - 2] > 0 and hand[tile - 1] > 0
+    result[2] = (tile - 1) // 9 == suit and (tile + 1) // 9 == suit and hand[tile - 1] > 0 and hand[tile + 1] > 0
+    result[3] = (tile + 1) // 9 == suit and (tile + 2) // 9 == suit and hand[tile + 1] > 0 and hand[tile + 2] > 0
+    result[0] = any(result[1:])
+    return result
 
 
-def name_to_tid(name: str) -> int:
-    """Return the tid of the tile with the given name.
-    The name is a string of the form "B1", "C5", "D9", "WE", "WS", "DR"
-    """
-    suit_name, rank_name = name[0], name[1:]
-    suit_id = {'M': 1, 'S': 2, 'P': 3, 'W': 4, 'D': 5}[suit_name]
-    if suit_id == 4:
-        wind_id = {'E': 1, 'S': 3, 'W': 5, 'N': 7}[rank_name]
-        return suit_id * 10 + wind_id
-    if suit_id == 5:
-        dragon_id = {'R': 1, 'G': 3, 'W': 5}[rank_name]
-        return suit_id * 10 + dragon_id
-    return suit_id * 10 + int(rank_name)
+def can_pong(hand: list[int], tile: int) -> bool:
+    return hand[tile] >= 2
 
 
-def tid_to_unicode(tid: int) -> str:
-    """Return the unicode character of the tile with the given tid.
-    """
-    suit_id, rank_id = tid // 10, tid % 10
-    if suit_id == 4:
-        wind_unicode = {1: 0x1f000, 3: 0x1f001, 5: 0x1f002, 7: 0x1f003}
-        return chr(wind_unicode[rank_id])
-    if suit_id == 5:
-        dragon_unicode = {1: 0x1f004, 3: 0x1f005, 5: 0x1f006}
-        return chr(dragon_unicode[rank_id])
-    return chr(0x1f007 + (suit_id - 1) * 9 + rank_id - 1)
-
-
-def is_valid(tid: int) -> bool:
-    """Return True if the tid is valid, False otherwise."""
-    return tid in TID_SET
+def can_kong(hand: list[int], tile: int | None = None) -> bool:
+    if tile is None:
+        return max(hand) == 4
+    return hand[tile] == 3
 
 
 def is_winning(hand: list[int]) -> bool:
+    head = -1
+    for i in range(3):
+        s = sum(hand[i * 9: (i + 1) * 9]) % 3
+        if s == 1:
+            return False
+        if s == 2:
+            if head == -1:
+                head = i
+            else:
+                return False
+
+    for i in range(27, 34):
+        if hand[i] % 3 == 1:
+            return False
+        if hand[i] % 3 == 2:
+            if head == -1:
+                head = i
+            else:
+                return False
+
+    for i in range(3):
+        if i == head:
+            if not is_winning_same_suit(hand[i * 9: (i + 1) * 9]):
+                return False
+        else:
+            if not is_melds_same_suit(hand[i * 9: (i + 1) * 9]):
+                return False
+
+    return head != -1
+
+
+def is_melds_same_suit(hand: list[int]) -> bool:
+    """Return true if the hand is all melds (3N, sequences or triplets), False otherwise.
+    The hand must only comprise one suit of tiles.
+    Based on 'iswh0' from https://github.com/tomohxx/shanten-number/blob/master/judwin.cpp
+    """
+    if len(hand) != 9:
+        raise ValueError("Hand of same suit only - expected length of hand is 9")
+    a, b = hand[:2]
+    for i in range(7):
+        r = a % 3
+        if b >= r and hand[i + 2] >= r:
+            a, b = b - r, hand[i + 2] - r
+        else:
+            return False
+    return a % 3 == 0 and b % 3 == 0
+
+
+def is_winning_same_suit(hand: list[int]) -> bool:
+    """Return true if the hand is winning (3N+2), False otherwise.
+    The hand must only comprise one suit of tiles
+    Based on 'iswh2' from https://github.com/tomohxx/shanten-number/blob/master/judwin.cpp
+    """
+    if len(hand) != 9:
+        raise ValueError("Hand of same suit only - expected length of hand is 9")
+    s = sum(i * v for i, v in enumerate(hand))
+    for p in range(s * 2 % 3, 9, 3):
+        if hand[p] >= 2:
+            hand[p] -= 2
+            if is_melds_same_suit(hand):
+                hand[p] += 2
+                return True
+            else:
+                hand[p] += 2
+    return False
+
+
+def is_winning_honor_only(hand: list[int]) -> bool:
+    """Return true if the hand is winning (3N+2), False otherwise
+    The hand must only have honor tiles
+    Based on 'iswhs' from https://github.com/tomohxx/shanten-number/blob/master/judwin.cpp
+    """
+    head = -1
+    for i in range(7):
+        if hand[i] % 3 == 1:
+            return False
+        if hand[i] % 3 == 2:
+            if head == -1:
+                head = i
+            else:
+                return False
+    return True
+
+
+def is_winning_old(hand: list[int]) -> bool:
     """Return True if the hand is a winning hand, False otherwise.
     A winning hand must have one pair of same tiles, with the rest of the tiles
     forming melds (triplets or sequences).
@@ -67,37 +117,10 @@ def is_winning(hand: list[int]) -> bool:
     hand = [t for t in hand if t is not None]
     if len(hand) % 3 != 2:
         return False
-    return _is_winning(Counter(hand))
+    return _is_winning_old(Counter(hand))
 
 
-def can_chow(hand: list[int], tile: int) -> list[bool]:
-    result = [False for _ in range(4)]
-    tile_set = set(hand)
-    if tile > 40 or tile not in tile_set:
-        return result
-    if tile - 2 in tile_set and tile - 1 in tile_set:
-        result[0] = True
-        result[1] = True
-    if tile - 1 in tile_set and tile + 1 in tile_set:
-        result[0] = True
-        result[2] = True
-    if tile + 1 in tile_set and tile + 2 in tile_set:
-        result[0] = True
-        result[3] = True
-    return result
-
-
-def can_pong(hand: list[int], tile: int) -> bool:
-    return hand.count(tile) >= 2
-
-
-def can_kong(hand: list[int], tile: int | None = None) -> bool:
-    if tile is None:
-        return Counter(hand).most_common(1)[0][1] == 4
-    return hand.count(tile) >= 3
-
-
-def _is_winning(counter: Counter[int]) -> bool:
+def _is_winning_old(counter: Counter[int]) -> bool:
     """Auxiliary function for is_winning.
     The counter is a Counter object that counts the number of each tile in the
     original hand.
@@ -140,7 +163,7 @@ def is_ready(hand: list[int]) -> bool:
     A ready hand is a hand that is exactly one tile away from winning.
     """
     for tid in TID_LIST:
-        if is_winning(hand + [tid]):
+        if is_winning_old(hand + [tid]):
             return True
     return False
 
@@ -149,7 +172,7 @@ def screen_awaiting(hand: list[int]) -> list[int]:
     """Return a list of tiles that can make the hand winning.
     The list is empty if the hand is not ready.
     """
-    return [tid for tid in TID_LIST if is_winning(hand + [tid])]
+    return [tid for tid in TID_LIST if is_winning_old(hand + [tid])]
 
 
 def distance_to_ready(hand: list[int]) -> int:
@@ -232,12 +255,12 @@ def distance_to_melds(hand: Counter, memo: dict | None = None) -> int:
     return _get_distance(hand, n)
 
 
-def counter_to_hand(counter: Counter[int], sort=True, reverse=False) -> list[int]:
-    """Return the hand represented by the counter.
-    """
-    hand = []
-    for tid in counter:
-        hand.extend([tid] * counter[tid])
-    if sort:
-        hand.sort(reverse=reverse)
-    return hand
+# def counter_to_hand(counter: Counter[int], sort=True, reverse=False) -> list[int]:
+#     """Return the hand represented by the counter.
+#     """
+#     hand = []
+#     for tid in counter:
+#         hand.extend([tid] * counter[tid])
+#     if sort:
+#         hand.sort(reverse=reverse)
+#     return hand
