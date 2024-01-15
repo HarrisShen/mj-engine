@@ -34,3 +34,10 @@ Thumbs.db
 
 # Pytest cache
 .pytest_cache/
+
+# Plain text index file
+index_s.txt
+index_h.txt
+
+# Sample files for benchmark and other tests
+samples/

@@ -110,7 +110,8 @@ def is_winning_honor_only(hand: list[int]) -> bool:
 
 
 def is_winning_old(hand: list[int]) -> bool:
-    """Return True if the hand is a winning hand, False otherwise.
+    """DEPRECATED
+    Return True if the hand is a winning hand, False otherwise.
     A winning hand must have one pair of same tiles, with the rest of the tiles
     forming melds (triplets or sequences).
     """
@@ -121,7 +122,8 @@ def is_winning_old(hand: list[int]) -> bool:
 
 
 def _is_winning_old(counter: Counter[int]) -> bool:
-    """Auxiliary function for is_winning.
+    """DEPRECATED
+    Auxiliary function for is_winning.
     The counter is a Counter object that counts the number of each tile in the
     original hand.
     """
@@ -137,7 +139,8 @@ def _is_winning_old(counter: Counter[int]) -> bool:
 
 
 def _is_melds(counter: Counter[int]) -> bool:
-    """Return True if the counter can form melds, False otherwise."""
+    """DEPRECATED
+    Return True if the counter can form melds, False otherwise."""
     if not counter or counter.most_common(1)[0][1] == 0:
         return True
     for tid in counter:
@@ -162,9 +165,12 @@ def is_ready(hand: list[int]) -> bool:
     """Return True if the hand is ready, False otherwise.
     A ready hand is a hand that is exactly one tile away from winning.
     """
-    for tid in TID_LIST:
-        if is_winning_old(hand + [tid]):
+    for tile in range(34):
+        hand[tile] += 1
+        if is_winning(hand):
+            hand[tile] -= 1
             return True
+        hand[tile] -= 1
     return False
 
 
@@ -175,8 +181,9 @@ def screen_awaiting(hand: list[int]) -> list[int]:
     return [tid for tid in TID_LIST if is_winning_old(hand + [tid])]
 
 
-def distance_to_ready(hand: list[int]) -> int:
-    """Return the distance to win of the hand.
+def distance_to_ready_old(hand: list[int]) -> int:
+    """DEPRECATED
+    Return the distance to win of the hand.
     The distance to win is the smallest number of changes needed to make
     so that the hand is ready
     """
@@ -192,14 +199,14 @@ def distance_to_ready(hand: list[int]) -> int:
                 new_counter = counter.copy()
                 new_counter[pairs[i][0]] -= 2
                 new_counter[pairs[j][0]] -= 2
-                distance = min(distance, distance_to_melds(new_counter, memo))
+                distance = min(distance, 1 + distance_to_melds(new_counter, memo))
 
     # 4 melds + 1 single
     for tid in counter:
         new_counter = counter.copy()
         new_counter[tid] -= 1
         distance = min(distance, 1 + distance_to_melds(new_counter, memo))
-    return distance
+    return distance - 1
 
 
 def distance_to_melds(hand: Counter, memo: dict | None = None) -> int:
@@ -255,12 +262,12 @@ def distance_to_melds(hand: Counter, memo: dict | None = None) -> int:
     return _get_distance(hand, n)
 
 
-# def counter_to_hand(counter: Counter[int], sort=True, reverse=False) -> list[int]:
-#     """Return the hand represented by the counter.
-#     """
-#     hand = []
-#     for tid in counter:
-#         hand.extend([tid] * counter[tid])
-#     if sort:
-#         hand.sort(reverse=reverse)
-#     return hand
+def counter_to_hand(counter: Counter[int], sort=True, reverse=False) -> list[int]:
+    """Return the hand represented by the counter.
+    """
+    hand = []
+    for tid in counter:
+        hand.extend([tid] * counter[tid])
+    if sort:
+        hand.sort(reverse=reverse)
+    return hand

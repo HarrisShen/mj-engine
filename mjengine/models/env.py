@@ -6,7 +6,7 @@ import numpy as np
 
 from mjengine.constants import GameStatus, PlayerAction
 from mjengine.game import Game
-from mjengine.utils import distance_to_ready
+from mjengine.utils import distance_to_ready_old
 
 
 """
@@ -205,7 +205,7 @@ class MahjongEnv(gym.Env):
             elif any([player.is_winning() for player in self.game.players]):
                 reward = -10
             return get_state(self.game), reward, True, False, {"option": None, "next_player_state": None}
-        reward = distance_to_ready(old_hand) - distance_to_ready(player.hand)
+        reward = distance_to_ready_old(old_hand) - distance_to_ready_old(player.hand)
         state = get_state(self.game)
         self.game.get_option()
         next_player_state = get_state(self.game)

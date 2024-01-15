@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from mjengine.constants import PlayerAction
 from mjengine.option import Option
 from mjengine.tiles import hand_to_tiles
-from mjengine.utils import distance_to_ready
+from mjengine.utils import distance_to_ready_old
 
 
 class Strategy(ABC):
@@ -100,7 +100,7 @@ class ClosestReadyStrategy(Strategy):
                 continue
             new_hand = hand.copy()
             new_hand[i] -= 1
-            dist_list[i] = distance_to_ready(new_hand)
+            dist_list[i] = distance_to_ready_old(new_hand)
             lowest_dist = min(lowest_dist, dist_list[-1])
         best_tiles = [i for i, d in enumerate(dist_list) if d == lowest_dist]
         if self.tiebreak == "value":
@@ -115,37 +115,37 @@ class ClosestReadyStrategy(Strategy):
         for tile in tiles:
             new_hand = hand.copy()
             new_hand[tile] = 0
-            if distance_to_ready(new_hand) <= distance_to_ready(hand):
+            if distance_to_ready_old(new_hand) <= distance_to_ready_old(hand):
                 return PlayerAction.KONG, tile
         return PlayerAction.PASS, -1
     
     def pong(self, hand, tile):
         new_hand = hand.copy()
         new_hand[tile] -= 2
-        if distance_to_ready(new_hand) <= distance_to_ready(hand):
+        if distance_to_ready_old(new_hand) <= distance_to_ready_old(hand):
             return PlayerAction.PONG, tile
         return PlayerAction.PASS, 0
     
     def chow(self, hand, tile, option):
-        distances = [distance_to_ready(hand), 14, 14, 14]
+        distances = [distance_to_ready_old(hand), 14, 14, 14]
         if option[1]:
             new_hand = hand.copy()
             new_hand[tile - 2] -= 1
             new_hand[tile - 1] -= 1
-            distances[1] = distance_to_ready(new_hand)
+            distances[1] = distance_to_ready_old(new_hand)
         if option[2]:
             new_hand = hand.copy()
             new_hand[tile - 1] -= 1
             new_hand[tile + 1] -= 1
-            distances[2] = distance_to_ready(new_hand)
+            distances[2] = distance_to_ready_old(new_hand)
         if option[3]:
             new_hand = hand.copy()
             new_hand[tile + 1] -= 1
             new_hand[tile + 2] -= 1
-            distances[3] = distance_to_ready(new_hand)
+            distances[3] = distance_to_ready_old(new_hand)
         best_dist = min(distances[1:])
         decision = PlayerAction.PASS
-        if best_dist <= distance_to_ready(hand):
+        if best_dist <= distance_to_ready_old(hand):
             decision = random.choice([i for i, d in enumerate(distances) if i and d == best_dist])
         return decision, tile
         
