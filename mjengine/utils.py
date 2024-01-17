@@ -1,3 +1,5 @@
+import random
+import string
 from collections import Counter
 from mjengine.constants import TID_LIST
 
@@ -21,10 +23,21 @@ def can_pong(hand: list[int], tile: int) -> bool:
 def can_kong(hand: list[int], tile: int | None = None) -> bool:
     if tile is None:
         return max(hand) == 4
+    if sum(hand) % 3 == 2:
+        return hand[tile] == 4
     return hand[tile] == 3
 
 
-def is_winning(hand: list[int]) -> bool:
+def is_winning(hand: list[int], add_tile: int | None = None) -> bool:
+    if add_tile is None:
+        return _is_winning(hand)
+    hand[add_tile] += 1
+    result = _is_winning(hand)
+    hand[add_tile] -= 1
+    return result
+
+
+def _is_winning(hand: list[int]) -> bool:
     head = -1
     for i in range(3):
         s = sum(hand[i * 9: (i + 1) * 9]) % 3
@@ -178,7 +191,7 @@ def screen_awaiting(hand: list[int]) -> list[int]:
     """Return a list of tiles that can make the hand winning.
     The list is empty if the hand is not ready.
     """
-    return [tid for tid in TID_LIST if is_winning_old(hand + [tid])]
+    return [tid for tid in TID_LIST if is_winning(hand + [tid])]
 
 
 def distance_to_ready_old(hand: list[int]) -> int:

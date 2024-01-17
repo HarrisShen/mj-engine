@@ -1,7 +1,12 @@
+import json
+import os
+import pickle
+from datetime import datetime
+
 import numpy as np
 import torch
-from torch.nn import Module, Linear
 import torch.nn.functional as F
+from torch.nn import Module, Linear
 from torch.optim import Adam
 
 
@@ -21,19 +26,23 @@ class DQN:
     def __init__(
             self,
             state_dim, hidden_dim, action_dim,
-            lr, gamma, epsilon,
-            target_update, device):
+            lr, gamma, epsilon, target_update,
+            device, algorithm="default"):
+        self.state_dim = state_dim
+        self.hidden_dim = hidden_dim
         self.action_dim = action_dim
         self.q_net = QNet(state_dim, hidden_dim, action_dim)
         self.q_net.to(device)
         self.target_q_net = QNet(state_dim, hidden_dim, action_dim)
         self.target_q_net.to(device)
+        self.lr = lr
         self.optimizer = Adam(self.q_net.parameters(), lr=lr)
         self.gamma = gamma
         self.epsilon = epsilon
         self.target_update = target_update
         self.count = 0
         self.device = device
+        self.algorithm = algorithm
 
     def take_action(self, state: np.ndarray, option: np.ndarray):
         if np.random.random() < self.epsilon:
@@ -72,3 +81,42 @@ class DQN:
             self.target_q_net.load_state_dict(self.q_net.state_dict())
 
         self.count += 1
+
+    def save(self, model_dir: str = ".", model_name: str | None = None) -> str:
+        if model_name is None:
+            timestamp = datetime.strftime(datetime.utcnow(), "%y%m%d%H%M%S")
+            model_name = f"DQN_{self.hidden_dim}_{self.algorithm}_{timestamp}"
+        model_dir = os.path.join(model_dir, model_name)
+        if not os.path.isdir(model_dir):
+            os.makedirs(model_dir)
+        torch.save(self.q_net.state_dict(), os.path.join(model_dir, "q_net.pt"))
+        torch.save(self.target_q_net.state_dict(), os.path.join(model_dir, "target_q_net.pt"))
+        with open(os.path.join(model_dir, "model_settings.json"), "w") as outf:
+            json.dump({
+                "state_dim": self.state_dim,
+                "hidden_dim": self.hidden_dim,
+                "action_dim": self.action_dim,
+                "lr": self.lr,
+                "gamma": self.gamma,
+                "epsilon": self.epsilon,
+                "target_update": self.target_update,
+                "algorithm": self.algorithm
+            }, outf, indent=2)
+        with open(os.path.join(model_dir, "model_state.pkl"), "wb") as outf:
+            pickle.dump({"count": self.count}, outf)
+        return model_dir
+
+    @staticmethod
+    def restore(model_dir: str, device):
+        with open(os.path.join(model_dir, "model_settings.json"), "r") as f:
+            kwargs = json.load(f)
+        kwargs["device"] = device
+        obj = DQN(**kwargs)
+        with open(os.path.join(model_dir, "model_state.pkl"), "rb") as f:
+            attributes = pickle.load(f)
+        obj.__dict__.update(attributes)
+        state_dict = torch.load(os.path.join(model_dir, "q_net.pt"))
+        obj.q_net.load_state_dict(state_dict)
+        state_dict = torch.load(os.path.join(model_dir, "target_q_net.pt"))
+        obj.target_q_net.load_state_dict(state_dict)
+        return obj

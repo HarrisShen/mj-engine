@@ -32,7 +32,7 @@ if __name__ == '__main__':
     start = time.time()
     for i in range(n):
         tiles, hand = samples[i]
-        results_new[i] = sht.calculate(hand, 4) - 1
+        results_new[i] = sht(hand)
     finish = time.time()
     print(f"new method: {finish - start:.3f}s")
 

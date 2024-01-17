@@ -41,3 +41,5 @@ index_h.txt
 
 # Sample files for benchmark and other tests
 samples/
+
+trained_models/

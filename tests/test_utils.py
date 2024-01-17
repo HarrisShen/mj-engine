@@ -52,8 +52,13 @@ def test_can_pong():
 def test_can_kong():
     hand = tiles_to_hand([0, 0, 0, 0, 1, 1, 1])
     assert can_kong(hand)
+    assert not can_kong(hand, 0)
     assert can_kong(hand, 1)
     assert not can_kong(hand, 3)
+    hand = tiles_to_hand([0, 0, 0, 0, 1, 1, 1, 1])
+    assert can_kong(hand)
+    assert can_kong(hand, 0)
+    assert can_kong(hand, 1)
 
 
 def test_is_melds_same_suit():

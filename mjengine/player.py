@@ -2,7 +2,7 @@ from mjengine.constants import PlayerAction
 from mjengine.option import Option
 from mjengine.strategy import ClosestReadyStrategy, RandomStrategy, Strategy
 from mjengine.tiles import tid_to_unicode, hand_to_tiles
-from mjengine.utils import is_winning_old
+from mjengine.utils import is_winning
 
 
 class Player:
@@ -69,7 +69,7 @@ class Player:
         self.discards.append(tile)
 
     def is_winning(self) -> bool:
-        return is_winning_old(self.hand)
+        return is_winning(self.hand)
     
     def chow(self, tile: int, mode: int) -> None:
         if mode == PlayerAction.CHOW1:

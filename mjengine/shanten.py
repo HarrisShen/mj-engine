@@ -37,7 +37,8 @@ class Shanten:
 
     def calculate(self, hand: list[int], m: int) -> int:
         """
-        Calculate shanten number of the given hand
+        Calculate substitute number of the given hand
+        Note that the raw values in 'ret' list are substitute number (Shanten number + 1)
         """
         def acc_func(x, y):
             return x * 5 + y
@@ -46,6 +47,13 @@ class Shanten:
         self._add1(self.mp1[accumulate(hand[19: 27], hand[18], acc_func)], m)
         self._add2(self.mp2[accumulate(hand[28:], hand[27], acc_func)], m)
         return self.ret[m + 5]
+
+    def __call__(self, hand):
+        """
+        Calculate the Shanten number
+        """
+        m = sum(hand) // 3
+        return self.calculate(hand, m) - 1
 
 
 def accumulate(iterable, init, func):
