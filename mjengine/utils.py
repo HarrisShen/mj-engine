@@ -1,6 +1,5 @@
-import random
-import string
 from collections import Counter
+
 from mjengine.constants import TID_LIST
 
 

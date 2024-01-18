@@ -3,8 +3,9 @@ import numpy as np
 from gymnasium.spaces import Dict, Discrete, MultiDiscrete, MultiBinary
 from gymnasium.spaces.utils import flatten_space
 
-from mjengine.constants import GameStatus, PlayerAction
+from mjengine.constants import GameStatus
 from mjengine.game import Game
+from mjengine.models.utils import parse_action
 from mjengine.shanten import Shanten
 
 """
@@ -63,88 +64,6 @@ MAHJONG_ACTION_SPACE = Dict({
 })
 
 
-def get_state(game: Game, player: int | None = None) -> np.ndarray:
-    if player is None:
-        player = game.acting_player
-    state = game.to_dict(as_player=player)
-    encoded_state = np.array([])
-    for i in range(4):
-        pid = (player + i) % 4
-        if i == 0:
-            encoded_hand = np.array(state["players"][player]["hand"], dtype=np.int32)
-        else:
-            encoded_hand = np.array([])
-        encoded_exposed = np.zeros(34, dtype=np.int32)
-        for meld in state["players"][pid]["exposed"]:
-            for tid in meld:
-                encoded_exposed[tid] += 1
-        encoded_discards = np.zeros(33, dtype=np.int32)
-        for j, tid in enumerate(state["players"][pid]["discards"]):
-            encoded_discards[j] = tid + 1
-        encoded_state = np.concatenate([
-            encoded_state, [pid], 
-            encoded_hand, encoded_exposed,
-            encoded_discards]).astype(np.int32)
-    encoded_state = np.concatenate([
-        encoded_state, 
-        [state["wall"], state["dealer"], state["current_player"]]
-    ]).astype(np.int32)
-    return encoded_state
-
-
-def parse_action(action: int | np.ndarray) -> tuple[PlayerAction | int | None, int | None]:
-    if isinstance(action, np.ndarray):
-        action = action.flatten(order="C")
-        if len(action) != 76:
-            raise ValueError("Invalid array for action")
-        action = np.argmax(action)
-    if not isinstance(action, int):
-        raise ValueError("Invalid parameter type for action")
-    if action < 0 or action > 75:
-        raise ValueError("Invalid action")
-    if 0 <= action <= 33:
-        return None, action
-    elif 34 <= action <= 67:
-        return PlayerAction.KONG, action - 34
-    elif action == 68:
-        return PlayerAction.WIN, None
-    elif 69 <= action <= 71:
-        return PlayerAction.CHOW1 + action - 69, None
-    elif action == 72:
-        return PlayerAction.PONG, None
-    elif action == 73:
-        return PlayerAction.KONG, None
-    elif action == 74:
-        return PlayerAction.WIN, None
-    return PlayerAction.PASS, None
-
-
-def get_option(game: Game) -> np.ndarray:
-    option = np.zeros(76, dtype=bool)
-    if game.option.discard:
-        hand = game.players[game.current_player].hand
-        for i in range(34):
-            option[i] = hand[i] > 0
-    elif game.option.concealed_kong:
-        for tid in game.option.concealed_kong:
-            option[tid + 34] = True
-    elif game.option.win_from_self:
-        option[68] = True
-    elif game.option.chow[0]:
-        for i in range(1, 4):
-            option[68 + i] = game.option.chow[i]
-    elif game.option.pong:
-        option[72] = True
-    elif game.option.exposed_kong:
-        option[73] = True
-    elif game.option.win_from_chuck:
-        option[74] = True
-    # enable pass for non-discard situations
-    if not game.option.discard:
-        option[75] = True
-    return option
-
-
 def step_reward(start: int, finish: int) -> int:
     if start < finish:
         return -max(1, step_reward(finish, start) // 4)
@@ -174,29 +93,31 @@ class MahjongEnv(gym.Env):
         action_code, tile = parse_action(action)
         if action > 68 and self.game.players[self.game.current_player].discards:
             tile = self.game.players[self.game.current_player].discards[-1]
-        old_sht = self.shanten(self.game.players[self.game.acting_player].hand)
+        old_st = self.shanten(self.game.players[self.game.acting_player].hand)
         try:
             self.game.apply_action(action_code, tile)
         except ValueError:
             reward = -100
             info = {
-                "option": get_option(self.game),
-                "next_player_state": get_state(self.game)  # state in next player's perspective
+                "option": self.game.option.to_numpy(),
+                "next_player_state": self.game.to_numpy()  # state in next player's perspective
             }
-            return get_state(self.game), reward, False, False, info
+            return self.game.to_numpy(), reward, False, False, info
         player = self.game.players[self.game.acting_player]
         if self.game.status == GameStatus.END:
             if player.won:
                 reward = 128
-            elif any([player.is_winning() for player in self.game.players]):
-                reward = -10
-            return get_state(self.game), reward, True, False, {"option": None, "next_player_state": None}
-        reward = step_reward(old_sht, self.shanten(player.hand))
-        state = get_state(self.game)
+            return self.game.to_numpy(), reward, True, False, {
+                "option": None,
+                "next_player_state": None,
+                "chuck_tile": tile if player.won else None
+            }
+        reward = step_reward(old_st, self.shanten(player.hand))
+        state = self.game.to_numpy()
         self.game.get_option()
-        next_player_state = get_state(self.game)
+        next_player_state = self.game.to_numpy()
         info = {
-            "option": get_option(self.game),
+            "option": self.game.option.to_numpy(),
             "next_player_state": next_player_state
         }
         return state, reward, False, False, info
@@ -205,7 +126,7 @@ class MahjongEnv(gym.Env):
         self.game.reset()
         self.game.start_game()
         self.game.get_option()
-        return get_state(self.game), {"option": get_option(self.game)}
+        return self.game.to_numpy(), {"option": self.game.option.to_numpy()}
 
     def render(self):
         pass

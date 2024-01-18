@@ -2,7 +2,10 @@ import logging
 import random
 from collections import deque
 
+import numpy as np
+
 from mjengine.constants import GameStatus, PlayerAction
+from mjengine.models.utils import game_dict_to_numpy
 from mjengine.option import Option
 from mjengine.player import Player
 from mjengine.tiles import tid_to_unicode
@@ -34,6 +37,7 @@ class Game:
         if players is None:
             players = [Player() for _ in range(4)]
         self.players = players
+        self.register_players()
         self.current_player = 0
         self.acting_player = -1
         self.option = None
@@ -51,6 +55,10 @@ class Game:
             logging.basicConfig(level=logging.WARNING)
         else:
             raise ValueError("verbose level can only be 0, 1 or 2")
+
+    def register_players(self) -> None:
+        for i in range(len(self.players)):
+            self.players[i].position = i
 
     def reset(self) -> None:
         self.wall = []
@@ -109,7 +117,10 @@ class Game:
                 last_discard = None
                 if self.status == GameStatus.CHECK:
                     last_discard = self.players[self.current_player].discards[-1]
-                action, tile = self.players[self.acting_player].decide(self.option, last_discard)
+                action, tile = self.players[self.acting_player].decide(
+                    self.option,
+                    last_discard,
+                    self.to_dict(self.acting_player))
                 self.apply_action(action, tile)
             self.settle_score()
             if not self.players[self.dealer].is_winning():
@@ -157,7 +168,7 @@ class Game:
 
         # discard a tile
         if self.status == GameStatus.DISCARD:
-            option = Option(discard=True)
+            option = Option(discard=True, hand=self.players[self.current_player].hand)
             self.acting_player = self.current_player
             self.option = option
             return
@@ -194,7 +205,7 @@ class Game:
         if action is None:
             if self.status != GameStatus.DISCARD:
                 raise ValueError("Invalid action")
-            if self.players[player].hand[tile] == 0:
+            if self.players[player].hand[tile] < 1:
                 raise ValueError(f"Invalid tile (tid {tile}) to discard")
             self.players[player].discard(tile)
             logging.debug(f"Player {player} discards {tid_to_unicode(tile)}")
@@ -312,10 +323,13 @@ class Game:
         if detail == 1:
             report = f"\nP\tS\tW\tSW\tC\tWR\tSWR\tCR\n"
             for i in range(4):
+                self_win_rate = 0
+                if self.players[i].wins:
+                    self_win_rate = self.players[i].self_wins / self.players[i].wins
                 report += f"{i}\t{self.players[i].score}\t{self.players[i].wins}\t"\
                           f"{self.players[i].self_wins}\t{self.players[i].chucks}\t"\
                           f"{self.players[i].wins / self.games * 100:.2f}\t" \
-                          f"{self.players[i].self_wins / self.players[i].wins * 100:.2f}\t" \
+                          f"{self_win_rate * 100:.2f}\t" \
                           f"{self.players[i].chucks / self.games * 100:.2f}\n"
             return report
             
@@ -328,7 +342,17 @@ class Game:
             "round": self.round,
             "status": self.status,
             "current_player": self.current_player,
+            "acting_player": self.acting_player,
             "players": [p.to_dict(hide_hand=(as_player is not None and i != as_player)) 
                         for i, p in enumerate(self.players)]
         }
-    
+
+    def to_numpy(self, as_player: int | None = None) -> np.ndarray:
+        """
+        Turn the game object into a numpy array
+        Different from to_dict, this method requires to set up a player as main to mask opponents
+        If the player is not given, acting player is used as the main player
+        """
+        if as_player is None:
+            as_player = self.acting_player
+        return game_dict_to_numpy(self.to_dict(), player=as_player)

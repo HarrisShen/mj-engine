@@ -1,6 +1,8 @@
+import os
+
 from mjengine.constants import PlayerAction
 from mjengine.option import Option
-from mjengine.strategy import ClosestReadyStrategy, RandomStrategy, Strategy
+from mjengine.strategy import ClosestReadyStrategy, RandomStrategy, Strategy, RLAgentStrategy
 from mjengine.tiles import tid_to_unicode, hand_to_tiles
 from mjengine.utils import is_winning
 
@@ -27,12 +29,6 @@ class Player:
         self.exposed = []
         self.won = False
 
-    # def hand_to_tiles(self) -> list[int]:
-    #     tiles = []
-    #     for i in range(len(self.hand)):
-    #         tiles.extend([i for _ in range(self.hand[i])])
-    #     return tiles
-
     def hand_to_str(self) -> str:
         return ' '.join([tid_to_unicode(tid) for tid in hand_to_tiles(self.hand)])
     
@@ -43,25 +39,26 @@ class Player:
     def decide(
             self,
             option: Option,
-            last_discard: int | None = None) -> tuple[PlayerAction | None, int]:
+            last_discard: int | None,
+            game_info: dict) -> tuple[PlayerAction | None, int]:
         if last_discard is not None:
-            action, _ = self.acquire(last_discard, option)
+            action, _ = self.acquire(last_discard, option, game_info)
             return action, last_discard
         if option.discard:
-            return None, self.select_discard()
-        action, tile = self.examine(option)
+            return None, self.select_discard(game_info)
+        action, tile = self.examine(option, game_info)
         return action, tile
     
-    def examine(self, option: Option | None = None) -> tuple[PlayerAction, int]:
+    def examine(self, option: Option, info: dict) -> tuple[PlayerAction, int]:
         if sum(self.hand) % 3 != 2:
             raise ValueError("Only hand after drawing can be examined")
-        return self.strategy(self.hand, discard=False, option=option)
+        return self.strategy(self.hand, info, discard=False, option=option)
     
-    def acquire(self, tile: int, option: Option) -> tuple[PlayerAction, int]:
-        return self.strategy(self.hand, discard=False, tile=tile, option=option)
+    def acquire(self, tile: int, option: Option, info: dict) -> tuple[PlayerAction, int]:
+        return self.strategy(self.hand, info, discard=False, tile=tile, option=option)
     
-    def select_discard(self) -> int:
-        _, tile = self.strategy(self.hand, discard=True)
+    def select_discard(self, info: dict) -> int:
+        _, tile = self.strategy(self.hand, info, discard=True)
         return tile
     
     def discard(self, tile: int) -> None:
@@ -113,4 +110,11 @@ def make_player(strategy: str) -> Player:
         return Player(ClosestReadyStrategy())
     elif strategy == "closest_value":
         return Player(ClosestReadyStrategy("value"))
+    elif os.path.isdir(strategy):
+        import torch
+
+        device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        return Player(RLAgentStrategy.load(model_dir=strategy, device=device))
+
+    raise ValueError("Invalid strategy")
     

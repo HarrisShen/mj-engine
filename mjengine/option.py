@@ -1,11 +1,14 @@
 from dataclasses import dataclass, field
 
+import numpy as np
+
 from mjengine.constants import PlayerAction
 
 
 @dataclass
 class Option:
     discard: bool = False
+    hand: list[int] = field(default_factory=list)
     concealed_kong: list[int] = field(default_factory=list)
     win_from_self: bool = False
     chow: list[bool] = field(default_factory=lambda: [False, False, False, False])
@@ -41,3 +44,28 @@ class Option:
         if self.chow[0]:
             return PlayerAction.CHOW3
         return PlayerAction.PASS
+
+    def to_numpy(self) -> np.ndarray:
+        option = np.zeros(76, dtype=bool)
+        if self.discard:
+            hand = self.hand
+            for i in range(34):
+                option[i] = hand[i] > 0
+        elif self.concealed_kong:
+            for tid in self.concealed_kong:
+                option[tid + 34] = True
+        elif self.win_from_self:
+            option[68] = True
+        elif self.chow[0]:
+            for i in range(1, 4):
+                option[68 + i] = self.chow[i]
+        elif self.pong:
+            option[72] = True
+        elif self.exposed_kong:
+            option[73] = True
+        elif self.win_from_chuck:
+            option[74] = True
+        # enable pass for non-discard situations
+        if not self.discard:
+            option[75] = True
+        return option
