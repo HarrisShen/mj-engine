@@ -1,7 +1,7 @@
 import random
 import time
 
-from mjengine.shanten import Shanten
+from mjengine.analyzer import Shanten
 from mjengine.tiles import tiles_to_hand
 from mjengine.utils import *
 

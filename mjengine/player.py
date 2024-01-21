@@ -2,7 +2,7 @@ import os
 
 from mjengine.constants import PlayerAction
 from mjengine.option import Option
-from mjengine.strategy import ClosestReadyStrategy, RandomStrategy, Strategy, RLAgentStrategy
+from mjengine.strategy import AnalyzerStrategy, RandomStrategy, Strategy, RLAgentStrategy
 from mjengine.tiles import tid_to_unicode, hand_to_tiles
 from mjengine.utils import is_winning
 
@@ -72,23 +72,23 @@ class Player:
         if mode == PlayerAction.CHOW1:
             self.hand[tile - 1] -= 1
             self.hand[tile - 2] -= 1
-            self.exposed.append([tile - 2, tile - 1, tile])
+            self.exposed.append([tile - 2, tile - 1])
         elif mode == PlayerAction.CHOW2:
             self.hand[tile - 1] -= 1
             self.hand[tile + 1] -= 1
-            self.exposed.append([tile - 1, tile, tile + 1])
+            self.exposed.append([tile - 1, tile + 1])
         elif mode == PlayerAction.CHOW3:
             self.hand[tile + 1] -= 1
             self.hand[tile + 2] -= 1
-            self.exposed.append([tile, tile + 1, tile + 2])
+            self.exposed.append([tile + 1, tile + 2])
     
     def pong(self, tile: int) -> None:
         self.hand[tile] -= 2
-        self.exposed.append([tile, tile, tile])
+        self.exposed.append([tile, tile])
     
     def kong(self, tile: int) -> None:
+        self.exposed.append([tile for _ in range(self.hand[tile])])
         self.hand[tile] = 0
-        self.exposed.append([tile, tile, tile, tile])
 
     def to_dict(self, hide_hand=False) -> dict:
         return {
@@ -106,10 +106,14 @@ class Player:
 def make_player(strategy: str) -> Player:
     if strategy == "random":
         return Player(RandomStrategy())
-    elif strategy == "closest":
-        return Player(ClosestReadyStrategy())
-    elif strategy == "closest_value":
-        return Player(ClosestReadyStrategy("value"))
+    elif strategy == "analyzer":
+        return Player(AnalyzerStrategy())
+    elif strategy == "analyzer_value" or strategy == "value":
+        return Player(AnalyzerStrategy("value"))
+    elif strategy == "analyzer_exp0" or strategy == "exp0":
+        return Player(AnalyzerStrategy("exp0"))
+    elif strategy == "analyzer_exp1" or strategy == "exp1":
+        return Player(AnalyzerStrategy("exp1"))
     elif os.path.isdir(strategy):
         import torch
 

@@ -72,3 +72,20 @@ def tiles_to_hand(tiles: list[int]) -> list[int]:
     for tile in tiles:
         hand[tile] += 1
     return hand
+
+
+def tiles_left(game_dict: dict, mask: list[int | bool] | None = None):
+    tiles = [4 for _ in range(34)]
+    for i in range(4):
+        player = game_dict["players"][i]
+        hand = player["hand"]
+        for j in range(34):
+            tiles[j] -= hand[j]
+        for tid in player["discards"]:
+            tiles[tid] -= 1
+        for meld in player["exposed"]:
+            for tid in meld:
+                tiles[tid] -= 1
+    if mask is None:
+        return tiles
+    return [n if m else 0 for n, m in zip(tiles, mask)]

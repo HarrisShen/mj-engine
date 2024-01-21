@@ -1,14 +1,17 @@
 import random
 from abc import ABC, abstractmethod
+from typing import TypeAlias
 
 import numpy as np
 
+from mjengine.analyzer import Analyzer
 from mjengine.constants import PlayerAction
 from mjengine.models.agents import Agent, DQN
 from mjengine.models.utils import game_dict_to_numpy, parse_action
 from mjengine.option import Option
-from mjengine.shanten import Shanten
-from mjengine.tiles import hand_to_tiles
+from mjengine.tiles import hand_to_tiles, tiles_left
+
+StratOutput: TypeAlias = tuple[PlayerAction | None, int]
 
 
 class Strategy(ABC):
@@ -59,26 +62,33 @@ class Strategy(ABC):
         return PlayerAction.PASS, 0
     
     @abstractmethod
-    def discard(self, hand: list[int], info: dict):
+    def discard(self, hand: list[int], info: dict) -> StratOutput:
         pass
 
-    def win(self, hand: list[int], info: dict, tile: int | None = None):
+    def win(self, hand: list[int], info: dict, tile: int | None = None) -> StratOutput:
         return PlayerAction.WIN, tile
 
     @abstractmethod
-    def kong(self, hand: list[int], info: dict, tiles: list[int] | None):
+    def kong(self, hand: list[int], info: dict, tiles: list[int] | None) -> StratOutput:
         pass
 
     @abstractmethod
-    def pong(self, hand: list[int], info: dict, tile: int):
+    def pong(self, hand: list[int], info: dict, tile: int) -> StratOutput:
         pass
 
     @abstractmethod
-    def chow(self, hand: list[int], info: dict, tile: int, option: list[bool]):
+    def chow(self, hand: list[int], info: dict, tile: int, option: list[bool]) -> StratOutput:
+        pass
+
+    @abstractmethod
+    def name(self) -> str:
         pass
 
 
 class RandomStrategy(Strategy):
+
+    def name(self):
+        return "random"
     
     def discard(self, hand, info):
         return None, random.choice(hand_to_tiles(hand))
@@ -95,67 +105,85 @@ class RandomStrategy(Strategy):
         return random.choice([i for i in range(1, 4) if option[i]]), tile
 
 
-class ClosestReadyStrategy(Strategy):
-    def __init__(self, tiebreak=None, index_dir=".") -> None:
+class AnalyzerStrategy(Strategy):
+
+    def name(self):
+        return "analyzer_" + "default" if self.tiebreak is None else self.tiebreak
+
+    def __init__(self, tiebreak=None, index_dir="./index/") -> None:
         super().__init__()
         self.tiebreak = tiebreak
-        self.shanten = Shanten()
-        self.shanten.prepare(index_dir)
+        self.analyzer = Analyzer()
+        self.analyzer.prepare(index_dir)
 
     def discard(self, hand, info):
-        dist_list = [14 for _ in range(len(hand))]
-        for i in range(len(hand)):
-            if hand[i] == 0:
-                continue
-            hand[i] -= 1
-            dist_list[i] = self.shanten(hand)
-            hand[i] += 1
-        lowest_dist = min(dist_list)
-        best_tiles = [tid for tid, d in enumerate(dist_list) if d == lowest_dist]
+        _, discard, _ = self.analyzer(hand)
+        best_discards = [tid for tid, v in enumerate(discard) if v]
         if self.tiebreak == "value":
-            values = [tile_value(hand, tile) for tile in best_tiles]
-            best_value = min(values)
-            best_tiles = [tile for tile, value in zip(best_tiles, values) if value == best_value]
-        return None, random.choice(best_tiles)
+            costs = [tile_value(hand, tid) if discard[tid] else 1024 for tid in range(len(hand))]
+            best_cost = min(costs)
+            best_discards = [tid for tid in best_discards if costs[tid] == best_cost]
+        elif self.tiebreak == "exp0" or self.tiebreak == "exp1":
+            # exp0: Number of types of expected tiles
+            # exp1: Number of tiles of expected tiles, presumed
+            best_discards, _ = self.analyzer.best_discard(
+                hand, None if self.tiebreak == "exp0" else info)
+        return None, random.choice(best_discards)
     
     def kong(self, hand, info, tiles=None):
         if tiles is None:
             tiles = [i for i in range(len(hand)) if hand[i] == 4]
+        st, _, wait = self.analyzer(hand)
         for tile in tiles:
             new_hand = hand.copy()
             new_hand[tile] = 0
-            if self.shanten(new_hand) <= self.shanten(hand):
+            st1, _, wait1 = self.analyzer(new_hand)
+            if (-st1, sum(wait1)) >= (-st, sum(wait)):
                 return PlayerAction.KONG, tile
         return PlayerAction.PASS, -1
     
     def pong(self, hand, info, tile):
+        st, _, wait = self.analyzer(hand)
         new_hand = hand.copy()
         new_hand[tile] -= 2
-        if self.shanten(new_hand) <= self.shanten(hand):
+        st1, _, wait1 = self.analyzer(new_hand)
+        if (-st1, sum(wait1)) >= (-st, sum(wait)):
             return PlayerAction.PONG, tile
         return PlayerAction.PASS, 0
     
     def chow(self, hand, info, tile, option):
-        distances = [self.shanten(hand), 14, 14, 14]
+        st, _, wait = self.analyzer(hand)
+        sts = [st, 14, 14, 14]
+        waits = [sum(wait), 0, 0, 0]
         if option[1]:
             new_hand = hand.copy()
             new_hand[tile - 2] -= 1
             new_hand[tile - 1] -= 1
-            distances[1] = self.shanten(new_hand)
+            sts[1], _, new_wait = self.analyzer(new_hand)
+            waits[1] = sum(new_wait)
         if option[2]:
             new_hand = hand.copy()
             new_hand[tile - 1] -= 1
             new_hand[tile + 1] -= 1
-            distances[2] = self.shanten(new_hand)
+            sts[2], _, new_wait = self.analyzer(new_hand)
+            waits[2] = sum(new_wait)
         if option[3]:
             new_hand = hand.copy()
             new_hand[tile + 1] -= 1
             new_hand[tile + 2] -= 1
-            distances[3] = self.shanten(new_hand)
-        best_dist = min(distances[1:])
-        decision = PlayerAction.PASS
-        if best_dist <= self.shanten(hand):
-            decision = random.choice([i for i, d in enumerate(distances) if i and d == best_dist])
+            sts[3], _, new_wait = self.analyzer(new_hand)
+            waits[3] = sum(new_wait)
+        best_status = (-sts[0], waits[0])
+        decision = [0]
+        for i in range(1, 4):
+            if (-sts[i], waits[i]) > best_status:
+                best_status = (-sts[i], waits[i])
+                decision = [i]
+            elif (-sts[i], waits[i]) == best_status:
+                decision.append(i)
+        # if best_dist <= self.analyzer(hand):
+        #     decision = random.choice([i for i, d in enumerate(distances) if i and d == best_dist])
+        decision = PlayerAction(random.choice(decision))
         return decision, tile
         
 
@@ -252,5 +280,5 @@ class RLAgentStrategy(Strategy):
 
     @staticmethod
     def load(model_dir, device):
-        agent = DQN.restore(model_dir, device)
+        agent = DQN.restore(model_dir, device, train=False)
         return RLAgentStrategy(agent)

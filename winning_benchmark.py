@@ -1,6 +1,6 @@
 import random
 import time
-from mjengine.strategy import ClosestReadyStrategy, tile_value
+from mjengine.strategy import AnalyzerStrategy, tile_value
 from mjengine.tiles import tiles_to_hand
 from mjengine.utils import *
 

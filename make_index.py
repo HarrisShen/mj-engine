@@ -70,7 +70,7 @@ def main():
     for i in range(5):
         dealtile(9)(0, i * 3 + 2, 4 * 8, kind[i + 5], vec, is_winning_same_suit)
 
-    with open("index_s.txt", "w") as fout:
+    with open("index/index_s.txt", "w") as fout:
         deal(9)(0, kind, vec, fout)
 
     for i in range(5):
@@ -79,7 +79,7 @@ def main():
     for i in range(5):
         dealtile(7)(0, i * 3 + 2, 4 * 6, kind_h[i + 5], vec7, is_winning_honor_only)
 
-    with open("index_h.txt", "w") as fout2:
+    with open("index/index_h.txt", "w") as fout2:
         deal(7)(0, kind_h, vec7, fout2)
 
 

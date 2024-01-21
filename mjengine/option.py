@@ -51,21 +51,21 @@ class Option:
             hand = self.hand
             for i in range(34):
                 option[i] = hand[i] > 0
-        elif self.concealed_kong:
+            return option
+        if self.concealed_kong:
             for tid in self.concealed_kong:
                 option[tid + 34] = True
-        elif self.win_from_self:
+        if self.win_from_self:
             option[68] = True
-        elif self.chow[0]:
+        if self.chow[0]:
             for i in range(1, 4):
                 option[68 + i] = self.chow[i]
-        elif self.pong:
+        if self.pong:
             option[72] = True
-        elif self.exposed_kong:
+        if self.exposed_kong:
             option[73] = True
-        elif self.win_from_chuck:
+        if self.win_from_chuck:
             option[74] = True
         # enable pass for non-discard situations
-        if not self.discard:
-            option[75] = True
+        option[75] = True
         return option

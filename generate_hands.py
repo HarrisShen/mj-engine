@@ -1,7 +1,7 @@
 import argparse
 import os.path
 import random
-from mjengine.strategy import ClosestReadyStrategy, tile_value
+from mjengine.strategy import AnalyzerStrategy, tile_value
 from mjengine.utils import *
 
 
@@ -36,8 +36,8 @@ if __name__ == '__main__':
             dist_list.append(distance_to_ready_old(hand[:i] + hand[i + 1:]))
         print("Distance to ready after discarding: ", dist_list)
         print("Tile value: ", [tile_value(hand, t) for t in hand])
-        s = ClosestReadyStrategy("value")
-        print(f"Discard: {hand[s(hand)[0]]}")
+        s = AnalyzerStrategy("value")
+        print(f"Discard: {hand[s(hand, {})[0]]}")
 
     if args.size:
         n = int(args.size)

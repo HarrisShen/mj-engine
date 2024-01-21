@@ -1,6 +1,6 @@
 from pytest import fixture
 
-from mjengine.tiles import tid_to_name, name_to_tid, tid_to_unicode, tiles_to_hand, hand_to_tiles
+from mjengine.tiles import tid_to_name, name_to_tid, tid_to_unicode, tiles_to_hand, hand_to_tiles, tiles_left
 
 
 @fixture
@@ -51,3 +51,30 @@ def test_hand_to_tiles():
     tiles = hand_to_tiles(hand)
     for i in range(34):
         assert i in tiles
+
+
+def test_tiles_left():
+    tiles = tiles_left({
+        "players": [{
+            "hand": [0 for _ in range(34)],
+            "discards": [],
+            "exposed": []
+        }] * 4
+    })
+    assert tiles == [4 for _ in range(34)]
+    tiles = tiles_left({
+        "players": [{
+            "hand": [1] + [0 for _ in range(33)],
+            "discards": [],
+            "exposed": []
+        }] * 4
+    })
+    assert tiles == [0] + [4 for _ in range(33)]
+    tiles = tiles_left({
+        "players": [{
+            "hand": [0 for _ in range(34)],
+            "discards": [],
+            "exposed": []
+        }] * 4
+    }, [False] + [True for _ in range(33)])
+    assert tiles == [0] + [4 for _ in range(33)]

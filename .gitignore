@@ -36,8 +36,7 @@ Thumbs.db
 .pytest_cache/
 
 # Plain text index file
-index_s.txt
-index_h.txt
+index/
 
 # Sample files for benchmark and other tests
 samples/

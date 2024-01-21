@@ -7,7 +7,7 @@ import pandas as pd
 import torch
 from tqdm import tqdm
 
-from mjengine.models.agents import DQN, DQN_ALGORITHMS
+from mjengine.models.agents import DQN, DQN_ALGORITHMS, Deterministic
 from mjengine.models.env import MahjongEnv
 from mjengine.models.utils import ReplayBuffer
 
@@ -54,6 +54,23 @@ def number_input(
 def setup() -> dict:
     print("[Mahjong model - training setup]")
 
+    agent_type = input("Agent type: ")
+    if agent_type not in ["DQN", "random", "analyzer", "value", "exp0", "exp1"]:
+        exit(1)
+    if agent_type == "DQN":
+        return setup_dqn()
+
+    num_episodes = number_input(
+        prompt="Number of episodes (default 500): ",
+        num_type=int,
+        default=500,
+        min_val=1
+    )
+
+    return {"agent": agent_type, "num_episodes": num_episodes}
+
+
+def setup_dqn() -> dict:
     algorithm = number_input(
         prompt="Algorithm - 1. 'DQN' (default), 2. 'DoubleDQN': 3. 'DuelingDQN': ",
         num_type=int,
@@ -139,6 +156,7 @@ def setup() -> dict:
     device = "cuda" if device == 1 else "cpu"
 
     settings = {
+        "agent": "DQN",
         "algorithm": algorithm,
         "num_episodes": num_episodes,
         "hidden_dim": hidden_dim,
@@ -168,27 +186,35 @@ def setup() -> dict:
 
 
 def train(settings: dict) -> None:
-    num_episodes = settings["num_episodes"]
-    hidden_dim = settings["hidden_dim"]
-    lr = settings["lr"]
-    gamma = settings["gamma"]
-    epsilon = settings["epsilon"]
-    target_update = settings["target_update"]
-    buffer_size = settings["buffer_size"]
-    minimal_size = settings["minimal_size"]
-    batch_size = settings["batch_size"]
-    device = torch.device(settings["device"])
-    algorithm = settings["algorithm"]
-
     env = MahjongEnv()
     random.seed(0)
     np.random.seed(0)
     # env.seed(0)
     torch.manual_seed(0)
-    replay_buffer = ReplayBuffer(buffer_size)
-    state_dim = 309
-    action_dim = env.action_space.shape[0]
-    agent = DQN(state_dim, hidden_dim, action_dim, lr, gamma, epsilon, target_update, device, algorithm)
+
+    num_episodes = settings["num_episodes"]
+
+    if settings["agent"] == "DQN":
+        hidden_dim = settings["hidden_dim"]
+        lr = settings["lr"]
+        gamma = settings["gamma"]
+        epsilon = settings["epsilon"]
+        target_update = settings["target_update"]
+        buffer_size = settings["buffer_size"]
+        minimal_size = settings["minimal_size"]
+        batch_size = settings["batch_size"]
+        device = torch.device(settings["device"])
+        algorithm = settings["algorithm"]
+
+        replay_buffer = ReplayBuffer(buffer_size)
+        state_dim = 345
+        action_dim = env.action_space.shape[0]
+        agent = DQN(state_dim, hidden_dim, action_dim, lr, gamma, epsilon, target_update, device, algorithm)
+    else:
+        replay_buffer = ReplayBuffer(1000)
+        minimal_size = float("inf")
+        batch_size = 1
+        agent = Deterministic(settings["agent"])
 
     return_list, action_return = [], []
     best_action_return = float("-inf")
@@ -201,9 +227,11 @@ def train(settings: dict) -> None:
                 option = info["option"]
                 done = False
                 while not done:
-                    action = agent.take_action(state, option)  # testing - option ignored
+                    # TODO: wrap this part with try block, dump game obj and replay for that game on exceptions
+                    action = agent.take_action(state, option)
+                    # acting_player = env.game.acting_player
                     next_state, reward, done, _, info = env.step(action)
-                    # print(f"acting for player {env.game.acting_player}, action {action}, reward {reward}")
+                    # print(f"acting for player {acting_player}, action {action}, reward {reward}")
                     replay_buffer.add(state, action, reward, next_state, done)
                     option = info["option"]
                     state = info["next_player_state"]
@@ -234,7 +262,7 @@ def train(settings: dict) -> None:
                     pbar.set_postfix({
                         'epi.': '%d' % (num_episodes / 10 * i + i_episode + 1),
                         'ret.': '%.3f' % np.mean(return_list[-10:]),
-                        'act. ret.': '%.3f' % np.mean(action_return[-10:]),
+                        'a. r.': '%.3f' % np.mean(action_return[-10:]),
                         'b. a.': '%d' % best_action_return
                     })
                 pbar.update(1)

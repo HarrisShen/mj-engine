@@ -321,21 +321,44 @@ class Game:
                           f"{self.players[i].self_wins}\t{self.players[i].chucks}\n"
             return report
         if detail == 1:
-            report = f"\nP\tS\tW\tSW\tC\tWR\tSWR\tCR\n"
+            report = f"\nPos\tScore\tWin\tSelf W\tChuck\tAvg S\tWR\tSWR\tCR\n"
             for i in range(4):
                 self_win_rate = 0
                 if self.players[i].wins:
                     self_win_rate = self.players[i].self_wins / self.players[i].wins
                 report += f"{i}\t{self.players[i].score}\t{self.players[i].wins}\t"\
                           f"{self.players[i].self_wins}\t{self.players[i].chucks}\t"\
-                          f"{self.players[i].wins / self.games * 100:.2f}\t" \
-                          f"{self_win_rate * 100:.2f}\t" \
-                          f"{self.players[i].chucks / self.games * 100:.2f}\n"
+                          f"{self.players[i].score / self.games:.4f}\t"\
+                          f"{self.players[i].wins / self.games * 100:.3f}\t" \
+                          f"{self_win_rate * 100:.3f}\t" \
+                          f"{self.players[i].chucks / self.games * 100:.3f}\n"
             return report
+
+    def tiles_left(self, as_player: int, mask: list[bool] | None = None) -> list[int]:
+        tiles = [4 for _ in range(34)]
+        for i in range(4):
+            if i == as_player:
+                for tid, cnt in enumerate(self.players[i].hand):
+                    tiles[tid] -= cnt
+            for tid in self.players[i].discards:
+                tiles[tid] -= 1
+            for meld in self.players[i].exposed:
+                for tid in meld:
+                    tiles[tid] -= 1
+        if mask is None:
+            return tiles
+        return [cnt if bv else 0 for cnt, bv in zip(tiles, mask)]
             
-    def to_dict(self, as_player: int | None = None) -> dict:
+    def to_dict(self, as_player: int | str | None = None) -> dict:
         """Return a dict representation of the game.
         """
+        if isinstance(as_player, str):
+            if as_player == "acting":
+                as_player = self.acting_player
+            elif as_player == "current":
+                as_player = self.current_player
+            else:
+                raise ValueError("Invalid player selector")
         return {
             "wall": len(self.wall),
             "dealer": self.dealer,

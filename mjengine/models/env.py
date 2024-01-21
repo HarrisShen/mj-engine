@@ -3,10 +3,10 @@ import numpy as np
 from gymnasium.spaces import Dict, Discrete, MultiDiscrete, MultiBinary
 from gymnasium.spaces.utils import flatten_space
 
+from mjengine.analyzer import Analyzer
 from mjengine.constants import GameStatus
 from mjengine.game import Game
 from mjengine.models.utils import parse_action
-from mjengine.shanten import Shanten
 
 """
 position: 0 - 3, representing the player's position on table
@@ -64,55 +64,71 @@ MAHJONG_ACTION_SPACE = Dict({
 })
 
 
-def step_reward(start: int, finish: int) -> int:
-    if start < finish:
-        return -max(1, step_reward(finish, start) // 4)
-    reward = 0
-    for i in range(start, finish, -1):
-        reward += 2 ** (6 - i) if i < 7 else 1
-    return reward
+def step_reward(shanten_base: int, shanten_real: int, n_exp_base: int, n_exp_real: int) -> float:
+    if shanten_real > shanten_base:
+        max_reward, offset = 1, -1
+        if n_exp_base == 0:
+            coef = 0.5 * n_exp_real / (shanten_real ** 2)
+        else:
+            coef = 0.5 * n_exp_real / n_exp_base
+    else:
+        max_reward = max(1, 2 ** (5 - min(shanten_base, shanten_real)))
+        if n_exp_base == 0:
+            coef = 0
+        else:
+            coef = n_exp_real / n_exp_base
+        offset = 0
+    return max_reward * coef + offset
 
 
 class MahjongEnv(gym.Env):
     def __init__(
             self,
             game: Game | None = None,
-            index_dir: str = "."):
+            index_dir: str = "./index/"):
         self.game = game
         if self.game is None:
             self.game = Game(verbose=False)
 
-        self.shanten = Shanten()
-        self.shanten.prepare(index_dir)
+        self.analyzer = Analyzer()
+        self.analyzer.prepare(index_dir)
 
         self.action_space = flatten_space(MAHJONG_ACTION_SPACE)
         self.observation_space = flatten_space(MAHJONG_OBSERVATION_SPACE)
 
-    def step(self, action) -> tuple[np.ndarray, int, bool, bool, dict]:
+    def step(self, action) -> tuple[np.ndarray, float, bool, bool, dict]:
         reward = 0
         action_code, tile = parse_action(action)
         if action > 68 and self.game.players[self.game.current_player].discards:
             tile = self.game.players[self.game.current_player].discards[-1]
-        old_st = self.shanten(self.game.players[self.game.acting_player].hand)
+        acting_player = self.game.acting_player
+        player = self.game.players[acting_player]
+        old_st, _, old_wait = self.analyzer(player.hand)
+        if action < 34:  # discard
+            _, max_n_exp = self.analyzer.best_discard(player.hand, self.game.to_dict("acting"))
+        else:
+            max_n_exp = sum(self.game.tiles_left(acting_player, old_wait))
         try:
             self.game.apply_action(action_code, tile)
         except ValueError:
-            reward = -100
+            print(f"Invalid action {action} noted")
+            reward = -100.0
             info = {
                 "option": self.game.option.to_numpy(),
                 "next_player_state": self.game.to_numpy()  # state in next player's perspective
             }
             return self.game.to_numpy(), reward, False, False, info
-        player = self.game.players[self.game.acting_player]
         if self.game.status == GameStatus.END:
             if player.won:
-                reward = 128
+                reward = 128.0
             return self.game.to_numpy(), reward, True, False, {
                 "option": None,
                 "next_player_state": None,
-                "chuck_tile": tile if player.won else None
+                "chuck_tile": tile if player.won else None,
             }
-        reward = step_reward(old_st, self.shanten(player.hand))
+        new_st, _, new_wait = self.analyzer(player.hand)
+        new_n_exp = sum(self.game.tiles_left(acting_player, new_wait))
+        reward = step_reward(old_st, new_st, max_n_exp, new_n_exp) if action < 75 else 0
         state = self.game.to_numpy()
         self.game.get_option()
         next_player_state = self.game.to_numpy()

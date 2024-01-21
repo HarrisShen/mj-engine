@@ -10,6 +10,8 @@ import torch.nn.functional as F
 from torch.nn import Module, Linear
 from torch.optim import Adam
 
+from mjengine.constants import PlayerAction
+from mjengine.models.utils import find_last_discard, game_numpy_to_dict
 
 DQN_ALGORITHMS = ["DQN", "DoubleDQN", "DuelingDQN"]
 
@@ -50,6 +52,8 @@ class VANet(torch.nn.Module):
 
 
 class Agent(ABC):
+    def __init__(self, train: bool = True):
+        self.train = train
 
     @abstractmethod
     def take_action(self, state: np.ndarray, option: np.ndarray) -> int:
@@ -65,8 +69,74 @@ class Agent(ABC):
 
     @staticmethod
     @abstractmethod
-    def restore(model_dir: str, device: torch.device):
+    def restore(model_dir: str, device: torch.device, train: bool = False):
         pass
+
+
+class Deterministic(Agent):
+    def __init__(self, strategy):
+        super().__init__(False)
+
+        from mjengine.strategy import Strategy, RandomStrategy, AnalyzerStrategy
+
+        if isinstance(strategy, str):
+            if strategy == "random":
+                strategy = RandomStrategy()
+            elif strategy == "analyzer":
+                strategy = AnalyzerStrategy()
+            else:
+                strategy = AnalyzerStrategy(strategy)
+        self.strategy: Strategy = strategy
+
+    def take_action(self, state: np.ndarray, option: np.ndarray) -> int:
+        hand = state[1: 35].tolist()
+        if not option[-1]:
+            return self.strategy.discard(hand, game_numpy_to_dict(state))[1]
+        if option[68]:  # win by self
+            action, _ = self.strategy.win(hand, game_numpy_to_dict(state))
+            if action == PlayerAction.WIN:
+                return 68
+        if any(option[34: 68]):  # concealed kong
+            tiles = [i for i, v in enumerate(option[34: 68]) if v]
+            action, tile = self.strategy.kong(hand, game_numpy_to_dict(state), tiles)
+            if action == PlayerAction.KONG:
+                return 34 + tile
+        if option[74]:  # win by chuck
+            action, _ = self.strategy.win(hand, game_numpy_to_dict(state), find_last_discard(state))
+            if action == PlayerAction.WIN:
+                return 74
+        if option[73]:  # kong
+            action, _ = self.strategy.kong(hand, game_numpy_to_dict(state), [find_last_discard(state)])
+            if action == PlayerAction.KONG:
+                return 73
+        if option[72]:  # pong
+            action, _ = self.strategy.pong(hand, game_numpy_to_dict(state), find_last_discard(state))
+            if action == PlayerAction.PONG:
+                return 72
+        if any(option[69: 72]):  # chow
+            action, _ = self.strategy.chow(
+                hand, game_numpy_to_dict(state),
+                find_last_discard(state),
+                [True] + option[69: 72].tolist())
+            if action != PlayerAction.PASS:
+                return 68 + action
+        return 75
+
+    def update(self, **kwargs) -> None:
+        pass
+
+    def save(self, model_dir: str = ".", model_name: str | None = None) -> str:
+        if model_name is None:
+            timestamp = datetime.strftime(datetime.utcnow(), "%y%m%d%H%M%S")
+            model_name = f"{self.strategy.name()}_{timestamp}"
+        model_dir = os.path.join(model_dir, model_name)
+        if not os.path.isdir(model_dir):
+            os.makedirs(model_dir)
+        return model_dir
+
+    @staticmethod
+    def restore(model_dir: str, device: torch.device, train=False):
+        raise RuntimeError("Deterministic agent cannot be restored from files")
 
 
 class DQN(Agent):
@@ -74,7 +144,9 @@ class DQN(Agent):
             self,
             state_dim, hidden_dim, action_dim,
             lr, gamma, epsilon, target_update,
-            device, algorithm="DQN"):
+            device, algorithm="DQN", train=True):
+        super().__init__(train)
+
         self.state_dim = state_dim
         self.hidden_dim = hidden_dim
         self.action_dim = action_dim
@@ -103,7 +175,7 @@ class DQN(Agent):
         self.device = device
 
     def take_action(self, state: np.ndarray, option: np.ndarray) -> int:
-        if np.random.random() < self.epsilon:
+        if self.train and np.random.random() < self.epsilon:
             action = int(np.random.choice(np.arange(0, 76, dtype=int)[option], size=1))
         else:
             state = torch.from_numpy(state.astype(np.float32)).to(self.device)
@@ -113,6 +185,7 @@ class DQN(Agent):
         return action
 
     def update(self, **kwargs) -> None:
+        assert self.train
         states = torch.tensor(kwargs["states"], dtype=torch.float).to(self.device)
         actions = torch.tensor(kwargs["actions"]).view(-1, 1).to(self.device)
         rewards = torch.tensor(
@@ -170,7 +243,7 @@ class DQN(Agent):
         return model_dir
 
     @staticmethod
-    def restore(model_dir: str, device):
+    def restore(model_dir, device, train: bool = False):
         with open(os.path.join(model_dir, "model_settings.json"), "r") as f:
             kwargs = json.load(f)
         kwargs["device"] = device

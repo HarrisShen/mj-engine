@@ -1,4 +1,4 @@
-from mjengine.shanten import Shanten
+from mjengine.analyzer import Shanten
 from mjengine.tiles import tiles_to_hand
 from mjengine.utils import *
 
@@ -6,7 +6,6 @@ from mjengine.utils import *
 if __name__ == '__main__':
     n = 100_000
     samples = []
-    tid_map = {old_tid: i for i, old_tid in enumerate(TID_LIST)}
     with open("samples/sampled_hands_13_100k_v2.txt", "r") as f:
         for _ in range(n):
             tiles = [int(t) for t in f.readline().split()]
@@ -14,7 +13,7 @@ if __name__ == '__main__':
 
     print(f"Testing {n} samples")
 
-    with open("samples/sampled_hands_13_100k_results.txt", "r") as f:
+    with open("samples/sampled_hands_13_100k_results_calsht.txt", "r") as f:
         results_cpp = [int(f.readline()) for _ in range(n)]  # Gold standard
 
     sht = Shanten()
