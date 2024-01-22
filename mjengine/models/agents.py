@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from torch.nn import Module, Linear
 from torch.optim import Adam
 
-from mjengine.constants import PlayerAction
+from mjengine.constants import PlayerAction, GameStatus
 from mjengine.models.utils import find_last_discard, game_numpy_to_dict
 
 DQN_ALGORITHMS = ["DQN", "DoubleDQN", "DuelingDQN"]
@@ -74,53 +74,80 @@ class Agent(ABC):
 
 
 class Deterministic(Agent):
-    def __init__(self, strategy):
+    def __init__(self, game, strategy):
         super().__init__(False)
 
-        from mjengine.strategy import Strategy, RandomStrategy, AnalyzerStrategy
+        from mjengine.player import make_player
 
-        if isinstance(strategy, str):
-            if strategy == "random":
-                strategy = RandomStrategy()
-            elif strategy == "analyzer":
-                strategy = AnalyzerStrategy()
-            else:
-                strategy = AnalyzerStrategy(strategy)
-        self.strategy: Strategy = strategy
+        self.make_player = make_player
+        self.game = game
+
+        self.strategy = strategy
+        self.game.players = [make_player(strategy) for _ in range(4)]
+        # from mjengine.strategy import Strategy, RandomStrategy, AnalyzerStrategy
+        #
+        # if isinstance(strategy, str):
+        #     if strategy == "random":
+        #         strategy = RandomStrategy()
+        #     elif strategy == "analyzer":
+        #         strategy = AnalyzerStrategy()
+        #     else:
+        #         strategy = AnalyzerStrategy(strategy)
+        # self.strategy: Strategy = strategy
 
     def take_action(self, state: np.ndarray, option: np.ndarray) -> int:
-        hand = state[1: 35].tolist()
-        if not option[-1]:
-            return self.strategy.discard(hand, game_numpy_to_dict(state))[1]
-        if option[68]:  # win by self
-            action, _ = self.strategy.win(hand, game_numpy_to_dict(state))
-            if action == PlayerAction.WIN:
-                return 68
-        if any(option[34: 68]):  # concealed kong
-            tiles = [i for i, v in enumerate(option[34: 68]) if v]
-            action, tile = self.strategy.kong(hand, game_numpy_to_dict(state), tiles)
-            if action == PlayerAction.KONG:
-                return 34 + tile
-        if option[74]:  # win by chuck
-            action, _ = self.strategy.win(hand, game_numpy_to_dict(state), find_last_discard(state))
-            if action == PlayerAction.WIN:
-                return 74
-        if option[73]:  # kong
-            action, _ = self.strategy.kong(hand, game_numpy_to_dict(state), [find_last_discard(state)])
-            if action == PlayerAction.KONG:
-                return 73
-        if option[72]:  # pong
-            action, _ = self.strategy.pong(hand, game_numpy_to_dict(state), find_last_discard(state))
-            if action == PlayerAction.PONG:
-                return 72
-        if any(option[69: 72]):  # chow
-            action, _ = self.strategy.chow(
-                hand, game_numpy_to_dict(state),
-                find_last_discard(state),
-                [True] + option[69: 72].tolist())
-            if action != PlayerAction.PASS:
-                return 68 + action
-        return 75
+        game = self.game
+        last_discard = None
+        if game.status == GameStatus.CHECK:
+            last_discard = game.players[game.current_player].discards[-1]
+        action, tile = game.players[game.acting_player].decide(
+            game.option,
+            last_discard,
+            game.to_dict(game.acting_player))
+        if action is None:
+            return tile
+        if action == PlayerAction.PASS:
+            return 75
+        if action == PlayerAction.WIN:
+            return 68 if tile is None else 74
+        if action == PlayerAction.KONG:
+            return 34 + tile if game.option.concealed_kong else 73
+        if action == PlayerAction.PONG:
+            return 72
+        # CHOW
+        return 68 + int(action)
+        # hand = state[1: 35].tolist()
+        # if not option[-1]:
+        #     return self.strategy.discard(hand, game_numpy_to_dict(state))[1]
+        # if option[68]:  # win by self
+        #     action, _ = self.strategy.win(hand, game_numpy_to_dict(state))
+        #     if action == PlayerAction.WIN:
+        #         return 68
+        # if any(option[34: 68]):  # concealed kong
+        #     tiles = [i for i, v in enumerate(option[34: 68]) if v]
+        #     action, tile = self.strategy.kong(hand, game_numpy_to_dict(state), tiles)
+        #     if action == PlayerAction.KONG:
+        #         return 34 + tile
+        # if option[74]:  # win by chuck
+        #     action, _ = self.strategy.win(hand, game_numpy_to_dict(state), find_last_discard(state))
+        #     if action == PlayerAction.WIN:
+        #         return 74
+        # if option[73]:  # kong
+        #     action, _ = self.strategy.kong(hand, game_numpy_to_dict(state), [find_last_discard(state)])
+        #     if action == PlayerAction.KONG:
+        #         return 73
+        # if option[72]:  # pong
+        #     action, _ = self.strategy.pong(hand, game_numpy_to_dict(state), find_last_discard(state))
+        #     if action == PlayerAction.PONG:
+        #         return 72
+        # if any(option[69: 72]):  # chow
+        #     action, _ = self.strategy.chow(
+        #         hand, game_numpy_to_dict(state),
+        #         find_last_discard(state),
+        #         [True] + option[69: 72].tolist())
+        #     if action != PlayerAction.PASS:
+        #         return 68 + action
+        # return 75
 
     def update(self, **kwargs) -> None:
         pass
@@ -128,7 +155,7 @@ class Deterministic(Agent):
     def save(self, model_dir: str = ".", model_name: str | None = None) -> str:
         if model_name is None:
             timestamp = datetime.strftime(datetime.utcnow(), "%y%m%d%H%M%S")
-            model_name = f"{self.strategy.name()}_{timestamp}"
+            model_name = f"{self.strategy}_{timestamp}"
         model_dir = os.path.join(model_dir, model_name)
         if not os.path.isdir(model_dir):
             os.makedirs(model_dir)

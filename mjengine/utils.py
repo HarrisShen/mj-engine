@@ -5,7 +5,7 @@ from mjengine.constants import TID_LIST
 
 def can_chow(hand: list[int], tile: int) -> list[bool]:
     result = [False for _ in range(4)]
-    if tile > 27 or tile < 0:
+    if tile >= 27 or tile < 0:
         return result
     suit = tile // 9
     result[1] = (tile - 2) // 9 == suit and (tile - 1) // 9 == suit and hand[tile - 2] > 0 and hand[tile - 1] > 0

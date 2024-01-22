@@ -214,7 +214,7 @@ def train(settings: dict) -> None:
         replay_buffer = ReplayBuffer(1000)
         minimal_size = float("inf")
         batch_size = 1
-        agent = Deterministic(settings["agent"])
+        agent = Deterministic(env.game, settings["agent"])
 
     return_list, action_return = [], []
     best_action_return = float("-inf")
@@ -227,8 +227,11 @@ def train(settings: dict) -> None:
                 option = info["option"]
                 done = False
                 while not done:
-                    # TODO: wrap this part with try block, dump game obj and replay for that game on exceptions
-                    action = agent.take_action(state, option)
+                    try:
+                        action = agent.take_action(state, option)
+                    except Exception as e:
+                        print(f"[Error] Occurred at action {episode_actions}, episode {i_episode}")
+                        raise e
                     # acting_player = env.game.acting_player
                     next_state, reward, done, _, info = env.step(action)
                     # print(f"acting for player {acting_player}, action {action}, reward {reward}")

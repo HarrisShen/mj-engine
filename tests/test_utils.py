@@ -32,14 +32,19 @@ def test_is_ready():
 
 
 def test_can_chow():
-    tiles = [0, 1, 2, 3, 4, 5, 6]
-    hand = tiles_to_hand(tiles)
+    hand = tiles_to_hand([0, 1, 2, 3, 4, 5, 6])
     assert can_chow(hand, 3) == [True, True, True, True]
     assert can_chow(hand, 6) == [True, True, False, False]
     assert can_chow(hand, 0) == [True, False, False, True]
     assert can_chow(hand, 5) == [True, True, True, False]
     assert can_chow(hand, 1) == [True, False, True, True]
     assert can_chow(hand, 8) == [False, False, False, False]
+    hand = tiles_to_hand([28, 29, 29, 29])
+    assert not any(can_chow(hand, 27))
+    hand = tiles_to_hand([9, 10, 10, 10])
+    assert not any(can_chow(hand, 8))
+    hand = tiles_to_hand([7, 7, 7, 8])
+    assert not any(can_chow(hand, 9))
 
 
 def test_can_pong():
