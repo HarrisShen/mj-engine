@@ -8,7 +8,7 @@ from mjengine.utils import is_winning
 
 
 class Player:
-    def __init__(self, strategy: Strategy = RandomStrategy()) -> None:
+    def __init__(self, strategy: Strategy) -> None:
         self.game = None
         self.position = None
         self.hand = [0 for _ in range(34)]
@@ -104,15 +104,17 @@ class Player:
 
 
 def make_player(strategy: str) -> Player:
-    if strategy == "random":
-        return Player(RandomStrategy())
-    elif strategy == "analyzer":
+    if strategy in ["random", "random0", "r", "r0"]:
+        return Player(RandomStrategy(0))
+    elif strategy in ["random1", "r1"]:
+        return Player(RandomStrategy(1))
+    elif strategy == "analyzer" or strategy == "a":
         return Player(AnalyzerStrategy())
-    elif strategy == "analyzer_value" or strategy == "value":
+    elif strategy == "analyzer_value" or strategy == "value" or strategy == "v":
         return Player(AnalyzerStrategy("value"))
-    elif strategy == "analyzer_exp0" or strategy == "exp0":
+    elif strategy == "analyzer_exp0" or strategy == "exp0" or strategy == "e0":
         return Player(AnalyzerStrategy("exp0"))
-    elif strategy == "analyzer_exp1" or strategy == "exp1":
+    elif strategy in ["analyzer_exp1", "exp1", "e1", "e"]:
         return Player(AnalyzerStrategy("exp1"))
     elif os.path.isdir(strategy):
         import torch

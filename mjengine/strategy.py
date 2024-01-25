@@ -1,3 +1,4 @@
+import os.path
 import random
 from abc import ABC, abstractmethod
 from typing import TypeAlias
@@ -6,7 +7,7 @@ import numpy as np
 
 from mjengine.analyzer import Analyzer
 from mjengine.constants import PlayerAction
-from mjengine.models.agents import Agent, DQN
+from mjengine.models.agents import Agent, DQN, PPO
 from mjengine.models.utils import game_dict_to_numpy, parse_action
 from mjengine.option import Option
 from mjengine.tiles import hand_to_tiles, tiles_left
@@ -80,15 +81,17 @@ class Strategy(ABC):
     def chow(self, hand: list[int], info: dict, tile: int, option: list[bool]) -> StratOutput:
         pass
 
-    @abstractmethod
-    def name(self) -> str:
-        pass
-
 
 class RandomStrategy(Strategy):
+    def __init__(self, level: int):
+        super().__init__()
 
-    def name(self):
-        return "random"
+        # Random level:
+        # 0 - total random
+        # 1 - discard random, always chow/pong/kong
+        if level < 0 and level > 1:
+            raise ValueError("Invalid level value, expected 0 or 1")
+        self.level = level
     
     def discard(self, hand, info):
         return None, random.choice(hand_to_tiles(hand))
@@ -96,19 +99,26 @@ class RandomStrategy(Strategy):
     def kong(self, hand, info, tiles=None):
         if tiles is None:
             tiles = [t for t in range(len(hand)) if hand[t] == 4]
-        return PlayerAction.KONG, random.choice(tiles)
+        if self.level == 0:
+            tiles += [-1]
+        tile = random.choice(tiles)
+        if tile == -1:
+            return PlayerAction.PASS, -1
+        return PlayerAction.KONG, tile
     
     def pong(self, hand, info, tile):
+        if self.level == 0:
+            tile = random.choice([-1, tile])
+        if tile == -1:
+            return PlayerAction.PASS, tile
         return PlayerAction.PONG, tile
     
     def chow(self, hand, info, tile, option):
-        return random.choice([i for i in range(1, 4) if option[i]]), tile
+        action = random.choice([i for i in range(self.level, 4) if option[i]])
+        return PlayerAction(action), tile
 
 
 class AnalyzerStrategy(Strategy):
-
-    def name(self):
-        return "analyzer_" + "default" if self.tiebreak is None else self.tiebreak
 
     def __init__(self, tiebreak=None, index_dir="./index/") -> None:
         super().__init__()
@@ -149,7 +159,7 @@ class AnalyzerStrategy(Strategy):
         st1, _, wait1 = self.analyzer(new_hand)
         if (-st1, sum(wait1)) >= (-st, sum(wait)):
             return PlayerAction.PONG, tile
-        return PlayerAction.PASS, 0
+        return PlayerAction.PASS, tile
     
     def chow(self, hand, info, tile, option):
         st, _, wait = self.analyzer(hand)
@@ -280,5 +290,11 @@ class RLAgentStrategy(Strategy):
 
     @staticmethod
     def load(model_dir, device):
-        agent = DQN.restore(model_dir, device, train=False)
+        model_name = os.path.split(model_dir)[-1]
+        if model_name.startswith("DQN"):
+            agent = DQN.restore(model_dir, device, train=False)
+        elif model_name.startswith("PPO"):
+            agent = PPO.restore(model_dir, device, train=False)
+        else:
+            raise ValueError("No proper model class detected")
         return RLAgentStrategy(agent)

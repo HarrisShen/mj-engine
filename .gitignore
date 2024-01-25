@@ -42,3 +42,7 @@ index/
 samples/
 
 trained_models/
+
+temp/
+
+notes.*

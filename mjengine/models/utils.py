@@ -27,6 +27,9 @@ class ReplayBuffer:
         state, action, reward, next_state, done = zip(*transitions)
         return np.array(state), action, reward, np.array(next_state), done
 
+    def last_n(self, n):
+        return [self.buffer[-(n - i)] for i in range(n)]
+
 
 def game_dict_to_numpy(state: dict, player: int | None = None) -> np.ndarray:
     # the state dict of game must be masked for opponents
@@ -38,31 +41,32 @@ def game_dict_to_numpy(state: dict, player: int | None = None) -> np.ndarray:
         else:
             raise ValueError("Game dict is not masked, please specify 'as_player' in 'Game.to_dict()'")
     encoded_state = np.array([])
-    remaining_tiles = np.array([4 for _ in range(34)])
+    # remaining_tiles = np.array([4 for _ in range(34)])
     for i in range(4):
         pid = (player + i) % 4
         if i == 0:
             encoded_hand = np.array(state["players"][player]["hand"], dtype=np.int32)
-            remaining_tiles -= encoded_hand
+            # remaining_tiles -= encoded_hand
         else:
             encoded_hand = np.array([])
         encoded_exposed = np.zeros(34, dtype=np.int32)
         for meld in state["players"][pid]["exposed"]:
             for tid in meld:
                 encoded_exposed[tid] += 1
-        remaining_tiles -= encoded_exposed
-        encoded_discards = np.zeros(33, dtype=np.int32)
+        # remaining_tiles -= encoded_exposed
+        encoded_discards = np.zeros(34, dtype=np.int32)
         for j, tid in enumerate(state["players"][pid]["discards"]):
-            encoded_discards[j] = tid + 1
-            remaining_tiles[tid] -= 1
+            encoded_discards[tid] += 1
+            # encoded_discards[j * 34 + tid] = 1
+            # remaining_tiles[tid] -= 1
         encoded_state = np.concatenate([
             encoded_state, [pid], encoded_hand,
             encoded_exposed, encoded_discards
         ]).astype(np.int32)
     encoded_state = np.concatenate([
-        encoded_state, remaining_tiles,
+        encoded_state,  # remaining_tiles,
         [
-            state["wall"], int(state["status"]),
+            state["wall"],   # int(state["status"]),
             state["dealer"], state["current_player"],
             state["acting_player"]
         ]
@@ -79,17 +83,22 @@ def game_numpy_to_dict(state: np.ndarray) -> dict:
     players[state[0]]["hand"] = state[1: 35].tolist()
     for i in range(4):
         for j in range(34):
-            players[(state[0] + i) % 4]["exposed"][0] += [j] * state[35 + j + 68 * i]
-        for t in state[69 + 68 * i: 102 + 68 * i]:
-            if t == 0:
-                break
-            players[(state[0] + i) % 4]["discards"].append(t - 1)
+            players[(state[0] + i) % 4]["exposed"][0] += [j] * state[35 + j + 69 * i]
+            players[(state[0] + i) % 4]["discards"] += [j] * state[69 + j + 69 * i]
+        # for j in range(33):
+        #     for k in range(34):
+        #         if state[35 + 34 * 34 * i + 34 * j + k] == 0:
+        #             continue
+        #         players[(state[0] + i) % 4]["discards"].append(k)
+        # for t in state[69 + 68 * i: 102 + 68 * i]:
+        #     if t == 0:
+        #         break
+        #     players[(state[0] + i) % 4]["discards"].append(t - 1)
     return {
-        "wall": state[340],
-        "dealer": state[342],
-        "status": state[341],
-        "current_player": state[343],
-        "acting_player": state[344],
+        "wall": state[-4],
+        "dealer": state[-3],
+        "current_player": state[-2],
+        "acting_player": state[-1],
         "players": players
     }
 

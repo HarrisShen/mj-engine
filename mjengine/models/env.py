@@ -38,6 +38,7 @@ MAHJONG_OBSERVATION_SPACE = Dict({
     "wall": Discrete(136),
     "dealer": Discrete(4),
     "current_player": Discrete(4),
+    "acting_player": Discrete(4)
 })
 
 
@@ -64,21 +65,21 @@ MAHJONG_ACTION_SPACE = Dict({
 })
 
 
-def step_reward(shanten_base: int, shanten_real: int, n_exp_base: int, n_exp_real: int) -> float:
-    if shanten_real > shanten_base:
-        max_reward, offset = 1, -1
-        if n_exp_base == 0:
-            coef = 0.5 * n_exp_real / (shanten_real ** 2)
-        else:
-            coef = 0.5 * n_exp_real / n_exp_base
-    else:
-        max_reward = max(1, 2 ** (5 - min(shanten_base, shanten_real)))
-        if n_exp_base == 0:
-            coef = 0
-        else:
-            coef = n_exp_real / n_exp_base
-        offset = 0
-    return max_reward * coef + offset
+def step_reward(shanten_base: int, shanten_real: int, n_exp: int, n_round: int) -> float:
+    n_exp_base = min(136, 36 + 20 * (shanten_real - 1))
+    # offset = - (n_round ** 2) / 200
+    # if shanten_real > shanten_base:
+    #     max_reward = 1
+    #     offset -= 1
+    #     coef = 0.5 * n_exp / n_exp_base
+    # else:
+    #     max_reward = max(1, 2 ** (5 - min(shanten_base, shanten_real)))
+    #     coef = n_exp / n_exp_base
+    # return max_reward * coef + offset
+    low = -(2 ** (shanten_real - 4))
+    coef = (1 - min(1.0, n_exp / n_exp_base)) * np.exp((n_round - 8) / 30)
+    late_pen = np.ceil(-np.log(30 - n_round) * 1.22 + 4) / 2  # (n_round // 3) / 3
+    return low * coef - late_pen
 
 
 class MahjongEnv(gym.Env):
@@ -104,10 +105,6 @@ class MahjongEnv(gym.Env):
         acting_player = self.game.acting_player
         player = self.game.players[acting_player]
         old_st, _, old_wait = self.analyzer(player.hand)
-        if action < 34:  # discard
-            _, max_n_exp = self.analyzer.best_discard(player.hand, self.game.to_dict("acting"))
-        else:
-            max_n_exp = sum(self.game.tiles_left(acting_player, old_wait))
         try:
             self.game.apply_action(action_code, tile)
         except ValueError:
@@ -128,7 +125,8 @@ class MahjongEnv(gym.Env):
             }
         new_st, _, new_wait = self.analyzer(player.hand)
         new_n_exp = sum(self.game.tiles_left(acting_player, new_wait))
-        reward = step_reward(old_st, new_st, max_n_exp, new_n_exp) if action < 75 else 0
+        n_round = len(self.game.players[acting_player].discards)
+        reward = step_reward(old_st, new_st, new_n_exp, n_round)
         state = self.game.to_numpy()
         self.game.get_option()
         next_player_state = self.game.to_numpy()

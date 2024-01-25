@@ -8,10 +8,9 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.nn import Module, Linear
-from torch.optim import Adam
+from torch.optim import Adam, lr_scheduler
 
 from mjengine.constants import PlayerAction, GameStatus
-from mjengine.models.utils import find_last_discard, game_numpy_to_dict
 
 DQN_ALGORITHMS = ["DQN", "DoubleDQN", "DuelingDQN"]
 
@@ -31,7 +30,7 @@ class QNet(Module):
         return x
 
 
-class VANet(torch.nn.Module):
+class VANet(Module):
     """
     Source: https://hrl.boyuai.com/chapter/2/dqn%E6%94%B9%E8%BF%9B%E7%AE%97%E6%B3%95/
     """
@@ -43,11 +42,8 @@ class VANet(torch.nn.Module):
 
     def forward(self, x):
         A = self.fc_A(F.relu(self.fc1(x)))
-        A_mean = A.mean(-1)
-        if A.dim() == 2:
-            A_mean = A_mean.view(-1, 1)
         V = self.fc_V(F.relu(self.fc1(x)))
-        Q = V + A - A_mean
+        Q = V + A - A.mean(-1, keepdim=True)
         return Q
 
 
@@ -84,16 +80,6 @@ class Deterministic(Agent):
 
         self.strategy = strategy
         self.game.players = [make_player(strategy) for _ in range(4)]
-        # from mjengine.strategy import Strategy, RandomStrategy, AnalyzerStrategy
-        #
-        # if isinstance(strategy, str):
-        #     if strategy == "random":
-        #         strategy = RandomStrategy()
-        #     elif strategy == "analyzer":
-        #         strategy = AnalyzerStrategy()
-        #     else:
-        #         strategy = AnalyzerStrategy(strategy)
-        # self.strategy: Strategy = strategy
 
     def take_action(self, state: np.ndarray, option: np.ndarray) -> int:
         game = self.game
@@ -116,38 +102,6 @@ class Deterministic(Agent):
             return 72
         # CHOW
         return 68 + int(action)
-        # hand = state[1: 35].tolist()
-        # if not option[-1]:
-        #     return self.strategy.discard(hand, game_numpy_to_dict(state))[1]
-        # if option[68]:  # win by self
-        #     action, _ = self.strategy.win(hand, game_numpy_to_dict(state))
-        #     if action == PlayerAction.WIN:
-        #         return 68
-        # if any(option[34: 68]):  # concealed kong
-        #     tiles = [i for i, v in enumerate(option[34: 68]) if v]
-        #     action, tile = self.strategy.kong(hand, game_numpy_to_dict(state), tiles)
-        #     if action == PlayerAction.KONG:
-        #         return 34 + tile
-        # if option[74]:  # win by chuck
-        #     action, _ = self.strategy.win(hand, game_numpy_to_dict(state), find_last_discard(state))
-        #     if action == PlayerAction.WIN:
-        #         return 74
-        # if option[73]:  # kong
-        #     action, _ = self.strategy.kong(hand, game_numpy_to_dict(state), [find_last_discard(state)])
-        #     if action == PlayerAction.KONG:
-        #         return 73
-        # if option[72]:  # pong
-        #     action, _ = self.strategy.pong(hand, game_numpy_to_dict(state), find_last_discard(state))
-        #     if action == PlayerAction.PONG:
-        #         return 72
-        # if any(option[69: 72]):  # chow
-        #     action, _ = self.strategy.chow(
-        #         hand, game_numpy_to_dict(state),
-        #         find_last_discard(state),
-        #         [True] + option[69: 72].tolist())
-        #     if action != PlayerAction.PASS:
-        #         return 68 + action
-        # return 75
 
     def update(self, **kwargs) -> None:
         pass
@@ -282,4 +236,174 @@ class DQN(Agent):
         obj.q_net.load_state_dict(state_dict)
         state_dict = torch.load(os.path.join(model_dir, "target_q_net.pt"))
         obj.target_q_net.load_state_dict(state_dict)
+        return obj
+
+
+class PolicyNet(torch.nn.Module):
+    """
+    Source: https://hrl.boyuai.com/chapter/2/ppo%E7%AE%97%E6%B3%95/
+    """
+    def __init__(self, state_dim, hidden_dim, action_dim):
+        super(PolicyNet, self).__init__()
+        self.fc1 = torch.nn.Linear(state_dim, hidden_dim)
+        self.fc2 = torch.nn.Linear(hidden_dim, action_dim)
+
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        return F.softmax(self.fc2(x), dim=-1)
+
+
+class ValueNet(torch.nn.Module):
+    """
+    Source: https://hrl.boyuai.com/chapter/2/ppo%E7%AE%97%E6%B3%95/
+    """
+    def __init__(self, state_dim, hidden_dim):
+        super(ValueNet, self).__init__()
+        self.fc1 = torch.nn.Linear(state_dim, hidden_dim)
+        self.fc2 = torch.nn.Linear(hidden_dim, 1)
+
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        return self.fc2(x)
+
+
+def compute_advantage(gamma, lmbda, td_delta):
+    td_delta = td_delta.detach().numpy()
+    advantages = np.zeros(td_delta.shape, dtype=np.float32)
+    advantage = 0.0
+    for i in range(len(td_delta) - 1, -1, -1):
+        advantage = gamma * lmbda * advantage + td_delta[i]
+        advantages[i] = advantage
+    return torch.tensor(advantages, dtype=torch.float)
+
+
+class PPO(Agent):
+    """
+    Source: https://hrl.boyuai.com/chapter/2/ppo%E7%AE%97%E6%B3%95/
+    """
+    def __init__(self, state_dim, hidden_dim, action_dim, actor_lr, critic_lr,
+                 lmbda, epochs, eps, gamma, device, train=True):
+        super().__init__(train)
+
+        self.state_dim = state_dim
+        self.hidden_dim = hidden_dim
+        self.action_dim = action_dim
+
+        self.actor_lr = actor_lr
+        self.critic_lr = critic_lr
+        self.actor = PolicyNet(state_dim, hidden_dim, action_dim).to(device)
+        self.critic = ValueNet(state_dim, hidden_dim).to(device)
+        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(),
+                                                lr=actor_lr)
+        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(),
+                                                 lr=critic_lr)
+
+        self.epochs = epochs  # number of repetitions
+
+        def adjust_lr(epoch: int) -> float:
+            if epoch > 60000:
+                return 0.001
+            if epoch > 25000:
+                return 0.003
+            if epoch > 10000:
+                return 0.01
+            if epoch > 4000:
+                return 0.03
+            if epoch > 2000:
+                return 0.1
+            if epoch > 1000:
+                return 0.3
+            return 1.0
+
+        self.actor_scheduler = lr_scheduler.LambdaLR(self.actor_optimizer, adjust_lr)
+        self.critic_scheduler = lr_scheduler.LambdaLR(self.critic_optimizer, adjust_lr)
+
+        self.gamma = gamma
+        self.lmbda = lmbda
+
+        self.eps = eps  # PPO clip range
+        self.device = device
+
+    def take_action(self, state, option):
+        state = torch.from_numpy(state.astype(np.float32)).to(self.device)
+        # zero out illegal actions, then normalize probs to sum 1
+        option = torch.from_numpy(option.astype(np.float32)).to(self.device)
+        probs = self.actor(state) * option
+        prob_sum = probs.sum(dim=-1)
+        if prob_sum == 0:
+            probs = option / option.sum(dim=-1)
+        else:
+            probs = probs / prob_sum
+        action_dist = torch.distributions.Categorical(probs)
+        action = action_dist.sample()
+        return action.item()
+
+    def update(self, **kwargs):
+        assert self.train
+        states = torch.tensor(np.array(kwargs["states"]),
+                              dtype=torch.float).to(self.device)
+        actions = torch.tensor(kwargs['actions']).view(-1, 1).to(
+            self.device)
+        rewards = torch.tensor(kwargs['rewards'],
+                               dtype=torch.float).view(-1, 1).to(self.device)
+        next_states = torch.tensor(np.array(kwargs['next_states']),
+                                   dtype=torch.float).to(self.device)
+        dones = torch.tensor(kwargs['dones'],
+                             dtype=torch.float).view(-1, 1).to(self.device)
+        td_target = rewards + self.gamma * self.critic(next_states) * (1 - dones)
+        td_delta = td_target - self.critic(states)
+        advantage = compute_advantage(self.gamma, self.lmbda,
+                                      td_delta.cpu()).to(self.device)
+        old_log_probs = torch.log(self.actor(states).gather(1, actions)).detach()
+
+        for _ in range(self.epochs):
+            log_probs = torch.log(self.actor(states).gather(1, actions))
+            ratio = torch.exp(log_probs - old_log_probs)
+            surr1 = ratio * advantage
+            surr2 = torch.clamp(ratio, 1 - self.eps,
+                                1 + self.eps) * advantage  # PPO clip
+            actor_loss = torch.mean(-torch.min(surr1, surr2))  # loss function
+            critic_loss = torch.mean(F.mse_loss(self.critic(states), td_target.detach()))
+            self.actor_optimizer.zero_grad()
+            self.critic_optimizer.zero_grad()
+            actor_loss.backward()
+            critic_loss.backward()
+            self.actor_optimizer.step()
+            self.critic_optimizer.step()
+            self.actor_scheduler.step()
+            self.critic_scheduler.step()
+
+    def save(self, model_dir: str = ".", model_name: str | None = None) -> str:
+        if model_name is None:
+            timestamp = datetime.strftime(datetime.utcnow(), "%y%m%d%H%M%S")
+            model_name = f"PPO_{self.hidden_dim}_{timestamp}"
+        model_dir = os.path.join(model_dir, model_name)
+        if not os.path.isdir(model_dir):
+            os.makedirs(model_dir)
+        torch.save(self.actor.state_dict(), os.path.join(model_dir, "actor.pt"))
+        torch.save(self.critic.state_dict(), os.path.join(model_dir, "critic.pt"))
+        with open(os.path.join(model_dir, "model_settings.json"), "w") as outf:
+            json.dump({
+                "state_dim": self.state_dim,
+                "hidden_dim": self.hidden_dim,
+                "action_dim": self.action_dim,
+                "actor_lr": self.actor_lr,
+                "critic_lr": self.critic_lr,
+                "lmbda": self.lmbda,
+                "epochs": self.epochs,
+                "gamma": self.gamma,
+                "eps": self.eps
+            }, outf, indent=2)
+        return model_dir
+
+    @staticmethod
+    def restore(model_dir: str, device: torch.device, train: bool = False):
+        with open(os.path.join(model_dir, "model_settings.json"), "r") as f:
+            kwargs = json.load(f)
+        kwargs["device"] = device
+        obj = PPO(**kwargs)
+        state_dict = torch.load(os.path.join(model_dir, "actor.pt"))
+        obj.actor.load_state_dict(state_dict)
+        state_dict = torch.load(os.path.join(model_dir, "critic.pt"))
+        obj.critic.load_state_dict(state_dict)
         return obj

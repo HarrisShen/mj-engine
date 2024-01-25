@@ -7,7 +7,7 @@ import numpy as np
 from mjengine.constants import GameStatus, PlayerAction
 from mjengine.models.utils import game_dict_to_numpy
 from mjengine.option import Option
-from mjengine.player import Player
+from mjengine.player import Player, make_player
 from mjengine.tiles import tid_to_unicode
 from mjengine.utils import can_chow, can_kong, can_pong, is_winning
 
@@ -18,6 +18,7 @@ class Game:
             players: list[Player] | None = None, 
             round_limit: int | None = None,
             game_limit: int | None = None,
+            retain_dealer: bool = False,
             seed: int | float | None = None,
             verbose: int = 0) -> None:
         self.round_limit = round_limit
@@ -28,6 +29,7 @@ class Game:
             raise ValueError("Invalid game limit")
         if self.round_limit is None and self.game_limit is None:
             self.round_limit = 1
+        self.retain_dealer = retain_dealer
 
         self.wall = []
         self.dealer = 0
@@ -35,7 +37,7 @@ class Game:
         self.games = 0
         self.status = GameStatus.START
         if players is None:
-            players = [Player() for _ in range(4)]
+            players = [make_player("random") for _ in range(4)]
         self.players = players
         self.register_players()
         self.current_player = 0
@@ -123,7 +125,7 @@ class Game:
                     self.to_dict(self.acting_player))
                 self.apply_action(action, tile)
             self.settle_score()
-            if not self.players[self.dealer].is_winning():
+            if not self.retain_dealer or not self.players[self.dealer].is_winning():
                 self.dealer = (self.dealer + 1) % 4
                 # end of a round
                 if self.dealer == 0:
