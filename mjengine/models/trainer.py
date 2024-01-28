@@ -2,17 +2,22 @@ import numpy as np
 from gymnasium import Env
 from tqdm import tqdm
 
-from mjengine.models.agents import Agent
+from mjengine.game import Game
+from mjengine.models.agent.agent import Agent
 from mjengine.models.utils import ReplayBuffer
+from mjengine.player import make_player, Player
+from mjengine.strategy import RLAgentStrategy
 
 
 def train_on_policy(
         env: Env,
         agent: Agent,
         n_episodes: int,
+        n_checkpoints: int,
+        save_checkpoints: bool,
         evaluate: bool = False, **kwargs) -> tuple[list, list]:
     return_list, n_action_list = [], []
-    n_division = 10
+    n_division = n_checkpoints
     for i in range(n_division):
         with tqdm(total=int(n_episodes / n_division), desc=f'Iter. {i}') as pbar:
             for i_episode in range(int(n_episodes / n_division)):
@@ -52,8 +57,8 @@ def train_on_policy(
 def train_off_policy(
         env: Env,
         agent: Agent,
-        n_episodes: int,
         replay_buffer: ReplayBuffer,
+        n_episodes: int,
         min_size: int,
         batch_size: int,
         evaluate: bool = False, **kwargs) -> tuple[list, list]:
@@ -61,7 +66,7 @@ def train_off_policy(
     # best_action_return = float("-inf")
     n_division = 10
     for i in range(n_division):
-        with tqdm(total=int(n_episodes / n_division), desc='Iteration %d' % i) as pbar:
+        with tqdm(total=int(n_episodes / n_division), desc=f'Iter. {i}') as pbar:
             for i_episode in range(int(n_episodes / n_division)):
                 episode_return, episode_actions = 0, 0
                 state, info = env.reset()
@@ -113,3 +118,22 @@ def train_off_policy(
         if evaluate:
             eval_agent(agent, **kwargs)
     return return_list, n_action_list
+
+
+def eval_agent(
+        agent: Agent,
+        benchmark: str,
+        round_limit: int | None = None,
+        game_limit: int | None = None, **kwargs) -> None:
+    players = [make_player(benchmark) for _ in range(3)]
+    players.append(Player(RLAgentStrategy(agent)))
+    game = Game(
+        players=players,
+        round_limit=round_limit,
+        game_limit=game_limit,
+        **kwargs)
+    game.play()
+    summary = game.players[3].summary(game.games)
+    print(f"Eval. vs '{benchmark}': games={game_limit}, avg. score={summary['avg_score']:.4f}, "
+          f"win%={summary['win_rate'] * 100:.3f}, s.w.%={summary['self_win_rate'] * 100:.3f}, "
+          f"chuck%={summary['chuck_rate'] * 100:.3f}")

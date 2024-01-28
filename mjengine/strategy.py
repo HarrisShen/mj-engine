@@ -7,7 +7,9 @@ import numpy as np
 
 from mjengine.analyzer import Analyzer
 from mjengine.constants import PlayerAction
-from mjengine.models.agents import Agent, DQN, PPO
+from mjengine.models.agent.ppo import PPO
+from mjengine.models.agent.dqn import DQN
+from mjengine.models.agent.agent import Agent
 from mjengine.models.utils import game_dict_to_numpy, parse_action
 from mjengine.option import Option
 from mjengine.tiles import hand_to_tiles, tiles_left

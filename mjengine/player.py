@@ -102,6 +102,24 @@ class Player:
             "chucks": self.chucks,
         }
 
+    def summary(self, games: int | None = None) -> dict:
+        player_summary = {
+            "score": self.score,
+            "wins": self.wins,
+            "self_wins": self.wins,
+            "chucks": self.chucks
+        }
+        if games is None:
+            return player_summary
+        self_win_rate = 0
+        if self.wins:
+            self_win_rate = self.self_wins / self.wins
+        player_summary["avg_score"] = self.score / games
+        player_summary["win_rate"] = self.wins / games
+        player_summary["self_win_rate"] = self_win_rate
+        player_summary["chuck_rate"] = self.chucks / games
+        return player_summary
+
 
 def make_player(strategy: str) -> Player:
     if strategy in ["random", "random0", "r", "r0"]:

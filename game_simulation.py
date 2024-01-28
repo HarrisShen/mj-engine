@@ -16,7 +16,6 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--seed", help="Random seed used for game")
     parser.add_argument("-v", "--verbose", help="Verbosity of the program", action="count", default=0)
     args = parser.parse_args()
-    print(args)
 
     print("Preparing game...")
     start = time.process_time()
