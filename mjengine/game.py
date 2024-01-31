@@ -46,8 +46,7 @@ class Game:
         self.acting_queue = None
         self.waiting = []
 
-        if seed is not None:
-            random.seed(seed)
+        self.r = random.Random(seed)
 
         if verbose == 2:
             logging.basicConfig(level=logging.DEBUG)
@@ -62,6 +61,9 @@ class Game:
         for i in range(len(self.players)):
             self.players[i].position = i
 
+    def set_seed(self, seed: int | None):
+        self.r = random.Random(seed)
+
     def reset(self) -> None:
         self.wall = []
         self.status = GameStatus.START
@@ -73,7 +75,7 @@ class Game:
             raise ValueError("Game is not ready to deal")
         
         self.wall = list(range(34)) * 4
-        random.shuffle(self.wall)
+        self.r.shuffle(self.wall)
 
         # mimic real procedure - deal 4 tiles to each player, then 1 tile to each player
         for _ in range(3):

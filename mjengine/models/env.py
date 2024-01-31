@@ -16,17 +16,17 @@ discards: 35 dimensions, representing the player's discards
 For discards and exposed, value 0 is reserved to represent the absence of tiles/melds
 """
 MAIN_OBSERVATION_SPACE = Dict({
-    "position": Discrete(4),
-    "hand": MultiDiscrete([4] * 34),
-    "exposed": MultiDiscrete([4] * 34),
-    "discards": MultiDiscrete([35] * 33),  # How large can discards be?? Now it's just a mitigation.
+    "position": Discrete(1),
+    "hand": Discrete(34),
+    "exposed": Discrete(34),
+    "discards": Discrete(33),  # How large can discards be?? Now it's just a mitigation.
 })
 
 
 OPPONENT_OBSERVATION_SPACE = Dict({
-    "position": Discrete(4),
-    "exposed": MultiDiscrete([4] * 34),
-    "discards": MultiDiscrete([35] * 33),
+    "position": Discrete(1),
+    "exposed": Discrete(34),
+    "discards": Discrete(33),
 })
 
 
@@ -35,10 +35,10 @@ MAHJONG_OBSERVATION_SPACE = Dict({
     "player2": OPPONENT_OBSERVATION_SPACE,
     "player3": OPPONENT_OBSERVATION_SPACE,
     "player4": OPPONENT_OBSERVATION_SPACE,
-    "wall": Discrete(136),
-    "dealer": Discrete(4),
-    "current_player": Discrete(4),
-    "acting_player": Discrete(4)
+    "wall": Discrete(1),
+    "dealer": Discrete(1),
+    "current_player": Discrete(1),
+    "acting_player": Discrete(1)
 })
 
 
@@ -67,15 +67,6 @@ MAHJONG_ACTION_SPACE = Dict({
 
 def step_reward(shanten_base: int, shanten_real: int, n_exp: int, n_round: int) -> float:
     n_exp_base = min(136, 36 + 20 * (shanten_real - 1))
-    # offset = - (n_round ** 2) / 200
-    # if shanten_real > shanten_base:
-    #     max_reward = 1
-    #     offset -= 1
-    #     coef = 0.5 * n_exp / n_exp_base
-    # else:
-    #     max_reward = max(1, 2 ** (5 - min(shanten_base, shanten_real)))
-    #     coef = n_exp / n_exp_base
-    # return max_reward * coef + offset
     low = -(2 ** (shanten_real - 4))
     coef = (1 - min(1.0, n_exp / n_exp_base)) * np.exp((n_round - 8) / 30)
     late_pen = np.ceil(-np.log(30 - n_round) * 1.22 + 4) / 2  # (n_round // 3) / 3
@@ -86,16 +77,21 @@ class MahjongEnv(gym.Env):
     def __init__(
             self,
             game: Game | None = None,
+            seed: int | None = 0,
             index_dir: str = "./index/"):
         self.game = game
         if self.game is None:
             self.game = Game(verbose=False)
+        self.game.set_seed(seed)
 
         self.analyzer = Analyzer()
         self.analyzer.prepare(index_dir)
 
         self.action_space = flatten_space(MAHJONG_ACTION_SPACE)
         self.observation_space = flatten_space(MAHJONG_OBSERVATION_SPACE)
+
+    def seed(self, sd: int | None):
+        self.game.set_seed(sd)
 
     def step(self, action) -> tuple[np.ndarray, float, bool, bool, dict]:
         reward = 0

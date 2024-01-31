@@ -145,7 +145,7 @@ class DQN(Agent):
             "optimizer": self.optimizer.state_dict(),
             "count": self.count
         }
-        filename = "mode_state.pt" if checkpoint is None else f"model_state_cp_{checkpoint}.pt"
+        filename = "model_state.pt" if checkpoint is None else f"model_state_cp_{checkpoint}.pt"
         torch.save(model_state, os.path.join(model_dir, filename))
         return model_dir
 

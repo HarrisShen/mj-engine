@@ -19,6 +19,9 @@ class ReplayBuffer:
     def __setitem__(self, key, value):
         self.buffer[key] = value
 
+    def __iter__(self):
+        yield from self.buffer
+
     def add(self, state, action, reward, next_state, done):
         self.buffer.append((state, action, reward, next_state, done))
 

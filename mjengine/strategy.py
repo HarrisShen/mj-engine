@@ -295,7 +295,7 @@ class RLAgentStrategy(Strategy):
         model_name = os.path.split(model_dir)[-1]
         if model_name.startswith("DQN"):
             agent = DQN.restore(model_dir, device, train=False)
-        elif model_name.startswith("PPO"):
+        elif model_name.startswith("PPO") or model_name.startswith("GAIL_PPO"):
             agent = PPO.restore(model_dir, device, train=False)
         else:
             raise ValueError("No proper model class detected")

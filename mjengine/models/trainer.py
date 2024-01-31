@@ -1,26 +1,86 @@
 import numpy as np
 from gymnasium import Env
+from scipy.sparse import load_npz
 from tqdm import tqdm
 
 from mjengine.game import Game
 from mjengine.models.agent.agent import Agent
+from mjengine.models.gail import GAIL
 from mjengine.models.utils import ReplayBuffer
 from mjengine.player import make_player, Player
 from mjengine.strategy import RLAgentStrategy
 
 
+def train_gail(
+        env: Env,
+        agent: Agent,
+        gail: GAIL,
+        expert_data: str,
+        model_dir: str,
+        n_episode: int,
+        n_checkpoint: int,
+        save_checkpoint: bool,
+        evaluate: bool = False, **kwargs) -> tuple[list, list]:
+    expert_data = load_npz(expert_data).toarray().astype(np.int64)
+    expert_s, expert_a = expert_data[:, :-1], expert_data[:, -1]
+    print(f"Loaded {expert_data.shape[0]} state-action pairs from expert")
+    return_list, n_action_list = [], []
+    for i in range(n_checkpoint):
+        with tqdm(total=int(n_episode / n_checkpoint), desc=f'Iter. {i}') as pbar:
+            for i_episode in range(int(n_episode / n_checkpoint)):
+                episode_return, episode_actions = 0, 0
+                state, info = env.reset()
+                option = info["option"]
+                done = False
+                state_list = []
+                action_list = []
+                next_state_list = []
+                done_list = []
+                while not done:
+                    action = agent.take_action(state, option)
+                    next_state, reward, done, _, info = env.step(action)
+                    state_list.append(state)
+                    action_list.append(action)
+                    next_state_list.append(next_state)
+                    done_list.append(done)
+                    option = info["option"]
+                    state = info["next_player_state"]
+                    episode_return += reward
+                    episode_actions += 1
+                return_list.append(episode_return)
+                n_action_list.append(episode_actions)
+                gail.learn(expert_s, expert_a,
+                           np.array(state_list, dtype=np.int64),
+                           np.array(action_list, dtype=np.int64),
+                           next_state_list, done_list)
+                if (i_episode + 1) % 10 == 0:
+                    pbar.set_postfix({
+                        'epi': '%d' % (n_episode / 10 * i + i_episode + 1),
+                        'ret': '%.3f' % np.mean(return_list[-10:]),
+                        'a r': '%.3f' % (np.sum(return_list[-10:]) / np.sum(n_action_list[-10:])),
+                        'n a': '%.1f' % np.mean(n_action_list[-10:])
+                    })
+                pbar.update(1)
+        if evaluate:
+            eval_agent(agent, **kwargs)
+        if i + 1 < n_checkpoint and save_checkpoint:
+            agent.save(model_dir, i + 1)
+    agent.save(model_dir)
+    return return_list, n_action_list
+
+
 def train_on_policy(
         env: Env,
         agent: Agent,
-        n_episodes: int,
-        n_checkpoints: int,
-        save_checkpoints: bool,
+        model_dir: str,
+        n_episode: int,
+        n_checkpoint: int,
+        save_checkpoint: bool,
         evaluate: bool = False, **kwargs) -> tuple[list, list]:
     return_list, n_action_list = [], []
-    n_division = n_checkpoints
-    for i in range(n_division):
-        with tqdm(total=int(n_episodes / n_division), desc=f'Iter. {i}') as pbar:
-            for i_episode in range(int(n_episodes / n_division)):
+    for i in range(n_checkpoint):
+        with tqdm(total=int(n_episode / n_checkpoint), desc=f'Iter. {i}') as pbar:
+            for i_episode in range(int(n_episode / n_checkpoint)):
                 episode_return, episode_actions = 0, 0
                 state, info = env.reset()
                 option = info["option"]
@@ -38,12 +98,12 @@ def train_on_policy(
                     state = info["next_player_state"]
                     episode_return += reward
                     episode_actions += 1
-                agent.update(**transition_dict)
                 return_list.append(episode_return)
                 n_action_list.append(episode_actions)
+                agent.update(**transition_dict)
                 if (i_episode + 1) % 10 == 0:
                     pbar.set_postfix({
-                        'epi': '%d' % (n_episodes / 10 * i + i_episode + 1),
+                        'epi': '%d' % (n_episode / 10 * i + i_episode + 1),
                         'ret': '%.3f' % np.mean(return_list[-10:]),
                         'a r': '%.3f' % (np.sum(return_list[-10:]) / np.sum(n_action_list[-10:])),
                         'n a': '%.1f' % np.mean(n_action_list[-10:])
@@ -51,6 +111,9 @@ def train_on_policy(
                 pbar.update(1)
         if evaluate:
             eval_agent(agent, **kwargs)
+        if i + 1 < n_checkpoint and save_checkpoint:
+            agent.save(model_dir, i + 1)
+    agent.save(model_dir)
     return return_list, n_action_list
 
 
@@ -58,16 +121,18 @@ def train_off_policy(
         env: Env,
         agent: Agent,
         replay_buffer: ReplayBuffer,
-        n_episodes: int,
-        min_size: int,
+        model_dir: str,
+        n_episode: int,
+        n_checkpoint: int,
+        save_checkpoint: bool,
+        minimal_size: int,
         batch_size: int,
         evaluate: bool = False, **kwargs) -> tuple[list, list]:
     return_list, n_action_list = [], []
-    # best_action_return = float("-inf")
     n_division = 10
     for i in range(n_division):
-        with tqdm(total=int(n_episodes / n_division), desc=f'Iter. {i}') as pbar:
-            for i_episode in range(int(n_episodes / n_division)):
+        with tqdm(total=int(n_episode / n_division), desc=f'Iter. {i}') as pbar:
+            for i_episode in range(int(n_episode / n_division)):
                 episode_return, episode_actions = 0, 0
                 state, info = env.reset()
                 option = info["option"]
@@ -86,16 +151,8 @@ def train_off_policy(
                     state = info["next_player_state"]
                     episode_return += reward
                     episode_actions += 1
-                    # best_action_return = max(best_action_return, float(reward))
-                    # if info.get("chuck_tile"):  # Revise the reward if player chucks
-                    #     for j in range(episode_actions):
-                    #         if replay_buffer[-(1 + j)][1] == info["chuck_tile"]:
-                    #             c_s, c_a, c_r, c_ns, c_d = replay_buffer[-(1 + j)]
-                    #             replay_buffer[-(1 + j)] = (c_s, c_a, -128, c_ns, True)
-                    #             episode_return -= c_r + 128
-                    #             break
                     # Train the Q network until buffer reached minimal size
-                    if len(replay_buffer) > min_size:
+                    if len(replay_buffer) > minimal_size:
                         b_s, b_a, b_r, b_ns, b_d = replay_buffer.sample(batch_size)
                         transition_dict = {
                             "states": b_s,
@@ -109,7 +166,7 @@ def train_off_policy(
                 n_action_list.append(episode_actions)
                 if (i_episode + 1) % 10 == 0:
                     pbar.set_postfix({
-                        'epi.': '%d' % (n_episodes / 10 * i + i_episode + 1),
+                        'epi.': '%d' % (n_episode / 10 * i + i_episode + 1),
                         'ret.': '%.3f' % np.mean(return_list[-10:]),
                         'a. r.': '%.3f' % (np.sum(return_list[-10:]) / np.sum(n_action_list[-10:])),
                         'n. a.': '%.1f' % np.mean(n_action_list[-10:])
@@ -117,6 +174,9 @@ def train_off_policy(
                 pbar.update(1)
         if evaluate:
             eval_agent(agent, **kwargs)
+        if i + 1 < n_checkpoint and save_checkpoint:
+            agent.save(model_dir, i + 1)
+    agent.save(model_dir)
     return return_list, n_action_list
 
 
