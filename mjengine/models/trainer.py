@@ -57,8 +57,8 @@ def train_gail(
                     pbar.set_postfix({
                         'epi': '%d' % (n_episode / 10 * i + i_episode + 1),
                         'ret': '%.3f' % np.mean(return_list[-10:]),
-                        'a r': '%.3f' % (np.sum(return_list[-10:]) / np.sum(n_action_list[-10:])),
-                        'n a': '%.1f' % np.mean(n_action_list[-10:])
+                        'r/a': '%.3f' % (np.sum(return_list[-10:]) / np.sum(n_action_list[-10:])),
+                        'a/e': '%.1f' % np.mean(n_action_list[-10:])
                     })
                 pbar.update(1)
         if evaluate:
@@ -77,6 +77,8 @@ def train_on_policy(
         n_checkpoint: int,
         save_checkpoint: bool,
         evaluate: bool = False, **kwargs) -> tuple[list, list]:
+    if n_checkpoint == 0:
+        n_checkpoint = 1
     return_list, n_action_list = [], []
     for i in range(n_checkpoint):
         with tqdm(total=int(n_episode / n_checkpoint), desc=f'Iter. {i}') as pbar:
@@ -129,10 +131,9 @@ def train_off_policy(
         batch_size: int,
         evaluate: bool = False, **kwargs) -> tuple[list, list]:
     return_list, n_action_list = [], []
-    n_division = 10
-    for i in range(n_division):
-        with tqdm(total=int(n_episode / n_division), desc=f'Iter. {i}') as pbar:
-            for i_episode in range(int(n_episode / n_division)):
+    for i in range(n_checkpoint):
+        with tqdm(total=int(n_episode / n_checkpoint), desc=f'Iter. {i}') as pbar:
+            for i_episode in range(int(n_episode / n_checkpoint)):
                 episode_return, episode_actions = 0, 0
                 state, info = env.reset()
                 option = info["option"]
@@ -185,6 +186,8 @@ def eval_agent(
         benchmark: str,
         round_limit: int | None = None,
         game_limit: int | None = None, **kwargs) -> None:
+    agent_train_cp = agent.train
+    agent.train = False
     players = [make_player(benchmark) for _ in range(3)]
     players.append(Player(RLAgentStrategy(agent)))
     game = Game(
@@ -194,6 +197,7 @@ def eval_agent(
         **kwargs)
     game.play()
     summary = game.players[3].summary(game.games)
-    print(f"Eval. vs '{benchmark}': games={game_limit}, avg. score={summary['avg_score']:.4f}, "
+    print(f"Eval. vs '{benchmark}': games={game_limit}, score/g.={summary['avg_score']:.4f}, "
           f"win%={summary['win_rate'] * 100:.3f}, s.w.%={summary['self_win_rate'] * 100:.3f}, "
           f"chuck%={summary['chuck_rate'] * 100:.3f}")
+    agent.train = agent_train_cp

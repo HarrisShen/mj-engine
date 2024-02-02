@@ -8,6 +8,11 @@ class Agent(ABC):
     def __init__(self, train: bool = True):
         self.train = train
 
+        self.count = 0
+
+    def step(self):
+        self.count += 1
+
     @abstractmethod
     def take_action(self, state: np.ndarray, option: np.ndarray) -> int:
         pass

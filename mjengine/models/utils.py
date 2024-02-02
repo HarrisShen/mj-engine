@@ -34,49 +34,6 @@ class ReplayBuffer:
         return [self.buffer[-(n - i)] for i in range(n)]
 
 
-def game_dict_to_numpy(state: dict, player: int | None = None) -> np.ndarray:
-    # the state dict of game must be masked for opponents
-    if player is None:
-        for i in range(4):
-            if sum(state["players"][i]["hand"]) > 0:
-                player = i
-                break
-        else:
-            raise ValueError("Game dict is not masked, please specify 'as_player' in 'Game.to_dict()'")
-    encoded_state = np.array([])
-    # remaining_tiles = np.array([4 for _ in range(34)])
-    for i in range(4):
-        pid = (player + i) % 4
-        if i == 0:
-            encoded_hand = np.array(state["players"][player]["hand"], dtype=np.int32)
-            # remaining_tiles -= encoded_hand
-        else:
-            encoded_hand = np.array([])
-        encoded_exposed = np.zeros(34, dtype=np.int32)
-        for meld in state["players"][pid]["exposed"]:
-            for tid in meld:
-                encoded_exposed[tid] += 1
-        # remaining_tiles -= encoded_exposed
-        encoded_discards = np.zeros(34, dtype=np.int32)
-        for j, tid in enumerate(state["players"][pid]["discards"]):
-            encoded_discards[tid] += 1
-            # encoded_discards[j * 34 + tid] = 1
-            # remaining_tiles[tid] -= 1
-        encoded_state = np.concatenate([
-            encoded_state, [pid], encoded_hand,
-            encoded_exposed, encoded_discards
-        ]).astype(np.int32)
-    encoded_state = np.concatenate([
-        encoded_state,  # remaining_tiles,
-        [
-            state["wall"],   # int(state["status"]),
-            state["dealer"], state["current_player"],
-            state["acting_player"]
-        ]
-    ]).astype(np.int32)
-    return encoded_state
-
-
 def game_numpy_to_dict(state: np.ndarray) -> dict:
     players = [{
         "hand": [0 for _ in range(34)],
@@ -143,3 +100,46 @@ def find_last_discard(state: np.ndarray) -> int:
                     n_discards = j
                 break
     return tile
+
+
+def game_dict_to_numpy(state: dict, player: int | None = None) -> np.ndarray:
+    # the state dict of game must be masked for opponents
+    if player is None:
+        for i in range(4):
+            if sum(state["players"][i]["hand"]) > 0:
+                player = i
+                break
+        else:
+            raise ValueError("Game dict is not masked, please specify 'as_player' in 'Game.to_dict()'")
+    encoded_state = np.array([])
+    # remaining_tiles = np.array([4 for _ in range(34)])
+    for i in range(4):
+        pid = (player + i) % 4
+        if i == 0:
+            encoded_hand = np.array(state["players"][player]["hand"], dtype=np.int32)
+            # remaining_tiles -= encoded_hand
+        else:
+            encoded_hand = np.array([])
+        encoded_exposed = np.zeros(34, dtype=np.int32)
+        for meld in state["players"][pid]["exposed"]:
+            for tid in meld:
+                encoded_exposed[tid] += 1
+        # remaining_tiles -= encoded_exposed
+        encoded_discards = np.zeros(34, dtype=np.int32)
+        for j, tid in enumerate(state["players"][pid]["discards"]):
+            encoded_discards[tid] += 1
+            # encoded_discards[j * 34 + tid] = 1
+            # remaining_tiles[tid] -= 1
+        encoded_state = np.concatenate([
+            encoded_state, encoded_hand,
+            encoded_exposed, encoded_discards
+        ]).astype(np.int32)
+    encoded_state = np.concatenate([
+        encoded_state,  # remaining_tiles,
+        [
+            state["wall"],   # int(state["status"]),
+            # state["dealer"], state["current_player"],
+            # state["acting_player"]
+        ], state["option"]
+    ]).astype(np.int32)
+    return encoded_state

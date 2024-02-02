@@ -1,6 +1,5 @@
 import json
 import os
-from datetime import datetime
 
 import numpy as np
 import torch
@@ -14,28 +13,38 @@ class PolicyNet(torch.nn.Module):
     """
     Source: https://hrl.boyuai.com/chapter/2/ppo%E7%AE%97%E6%B3%95/
     """
-    def __init__(self, state_dim, hidden_dim, action_dim):
+    def __init__(self, state_dim, hidden_dim, action_dim, hidden_layer=1):
         super(PolicyNet, self).__init__()
-        self.fc1 = torch.nn.Linear(state_dim, hidden_dim)
-        self.fc2 = torch.nn.Linear(hidden_dim, action_dim)
+        self.hidden_layer = hidden_layer
+        self.input = torch.nn.Linear(state_dim, hidden_dim)
+        if self.hidden_layer == 2:
+            self.hidden = torch.nn.Linear(hidden_dim, hidden_dim)
+        self.output = torch.nn.Linear(hidden_dim, action_dim)
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        return F.softmax(self.fc2(x), dim=-1)
+        x = F.relu(self.input(x))
+        if self.hidden_layer == 2:
+            x = F.relu(self.hidden(x))
+        return F.softmax(self.output(x), dim=-1)
 
 
 class ValueNet(torch.nn.Module):
     """
     Source: https://hrl.boyuai.com/chapter/2/ppo%E7%AE%97%E6%B3%95/
     """
-    def __init__(self, state_dim, hidden_dim):
+    def __init__(self, state_dim, hidden_dim, hidden_layer=1):
         super(ValueNet, self).__init__()
-        self.fc1 = torch.nn.Linear(state_dim, hidden_dim)
-        self.fc2 = torch.nn.Linear(hidden_dim, 1)
+        self.hidden_layer = hidden_layer
+        self.input = torch.nn.Linear(state_dim, hidden_dim)
+        if self.hidden_layer == 2:
+            self.hidden = torch.nn.Linear(hidden_dim, hidden_dim)
+        self.output = torch.nn.Linear(hidden_dim, 1)
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        return self.fc2(x)
+        x = F.relu(self.input(x))
+        if self.hidden_layer == 2:
+            x = F.relu(self.hidden(x))
+        return self.output(x)
 
 
 def compute_advantage(gamma, lmbda, td_delta):
@@ -48,18 +57,18 @@ def compute_advantage(gamma, lmbda, td_delta):
     return torch.tensor(advantages, dtype=torch.float)
 
 
-def adjust_lr(epoch: int) -> float:
-    if epoch > 6000:
+def adjust_lr(epi: int) -> float:
+    if epi > 6000:
         return 0.001
-    if epoch > 2500:
+    if epi > 2500:
         return 0.003
-    if epoch > 1000:
+    if epi > 1000:
         return 0.01
-    if epoch > 400:
+    if epi > 400:
         return 0.03
-    if epoch > 200:
+    if epi > 200:
         return 0.1
-    if epoch > 100:
+    if epi > 100:
         return 0.3
     return 1.0
 
@@ -68,36 +77,34 @@ class PPO(Agent):
     """
     Source: https://hrl.boyuai.com/chapter/2/ppo%E7%AE%97%E6%B3%95/
     """
-    def __init__(self, state_dim, hidden_dim, action_dim, actor_lr, critic_lr, lr_schedule,
+    def __init__(self, state_dim, hidden_dim, action_dim, hidden_layer, actor_lr, critic_lr, lr_schedule,
                  lmbda, epochs, eps, gamma, device, train=True):
         super().__init__(train)
 
         self.state_dim = state_dim
         self.hidden_dim = hidden_dim
         self.action_dim = action_dim
+        self.hidden_layer = hidden_layer
 
         self.actor_lr = actor_lr
         self.critic_lr = critic_lr
-        self.actor = PolicyNet(state_dim, hidden_dim, action_dim).to(device)
-        self.critic = ValueNet(state_dim, hidden_dim).to(device)
+        self.actor = PolicyNet(state_dim, hidden_dim, action_dim, hidden_layer).to(device)
+        self.critic = ValueNet(state_dim, hidden_dim, hidden_layer).to(device)
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(),
                                                 lr=actor_lr)
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(),
                                                  lr=critic_lr)
 
-        self.epochs = epochs  # number of repetitions
-
         self.lr_schedule = lr_schedule
         self.actor_scheduler = lr_scheduler.LambdaLR(self.actor_optimizer, adjust_lr)
         self.critic_scheduler = lr_scheduler.LambdaLR(self.critic_optimizer, adjust_lr)
 
+        self.epochs = epochs  # number of repetitions
         self.gamma = gamma
         self.lmbda = lmbda
         self.eps = eps  # PPO clip range
 
         self.device = device
-
-        self.n_episode = 0
 
     def take_action(self, state, option):
         state = torch.from_numpy(state.astype(np.float32)).to(self.device)
@@ -142,12 +149,14 @@ class PPO(Agent):
             self.critic_optimizer.zero_grad()
             actor_loss.backward()
             critic_loss.backward()
+            # torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 0.1)
+            # torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 0.1)
             self.actor_optimizer.step()
             self.critic_optimizer.step()
         if self.lr_schedule:
             self.actor_scheduler.step()
             self.critic_scheduler.step()
-        self.n_episode += 1
+        self.step()
 
     def save(self, model_dir, checkpoint=None) -> str:
         if not os.path.isdir(model_dir):
@@ -159,8 +168,10 @@ class PPO(Agent):
                     "state_dim": self.state_dim,
                     "hidden_dim": self.hidden_dim,
                     "action_dim": self.action_dim,
+                    "hidden_layer": self.hidden_layer,
                     "actor_lr": self.actor_lr,
                     "critic_lr": self.critic_lr,
+                    "lr_schedule": self.lr_schedule,
                     "lmbda": self.lmbda,
                     "gamma": self.gamma,
                     "eps": self.eps,
@@ -173,7 +184,7 @@ class PPO(Agent):
             "critic_optimizer": self.critic_optimizer.state_dict(),
             "actor_scheduler": self.actor_scheduler.state_dict(),
             "critic_scheduler": self.critic_scheduler.state_dict(),
-            "n_episode": self.n_episode
+            "count": self.count
         }
         filename = "model_state.pt" if checkpoint is None else f"model_state_cp_{checkpoint}.pt"
         torch.save(model_state, os.path.join(model_dir, filename))

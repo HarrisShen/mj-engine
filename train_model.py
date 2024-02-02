@@ -60,10 +60,13 @@ def setup() -> dict:
 def setup_train() -> dict:
     print("=" * 20 + " Training params " + "=" * 20)
     seed = numeric_input("Random seed", int, default=0)
-    n_episodes = numeric_input("Number of episodes", int, default=500, min_val=1)
-    n_checkpoints = numeric_input("Number of check points", int, default=10, min_val=1)
-    save_cp = bool_input("Save check points?", default=True)
-    eval_params = {"evaluate": bool_input("Enable evaluation?", default=True)}
+    n_episode = numeric_input("Number of episodes", int, default=500, min_val=1)
+    n_checkpoint = numeric_input("Number of check points", int, default=10, min_val=0)
+    if n_checkpoint == 0:
+        save_cp, eval_params = False, {"evaluate": False}
+    else:
+        save_cp = bool_input("Save check points?", default=False)
+        eval_params = {"evaluate": bool_input("Enable evaluation?", default=False)}
     if eval_params["evaluate"]:
         eval_params["benchmark"] = numeric_input("Benchmark strategy",
                                                  int, default=1, choice={1: "random", 2: "random1"})
@@ -72,8 +75,8 @@ def setup_train() -> dict:
     return {
         "seed": seed,
         "train_params": {
-            "n_episode": n_episodes,
-            "n_checkpoint": n_checkpoints,
+            "n_episode": n_episode,
+            "n_checkpoint": n_checkpoint,
             "save_checkpoint": save_cp,
             **eval_params
         }
@@ -94,11 +97,12 @@ def setup_gail() -> dict:
 def setup_ppo() -> dict:
     print("=" * 20 + " PPO params " + "=" * 20)
     hidden_dim = numeric_input("Hidden dimension", int, default=128, min_val=1)
+    hidden_layer = numeric_input("Number of hidden layer", int, default=1, choice=[1, 2])
     actor_lr = unit_interval_input("Initial learning rate of actor", default=1e-4)
-    critic_lr = unit_interval_input("Initial learning rate of critic", default=5e-3)
+    critic_lr = unit_interval_input("Initial learning rate of critic", default=1e-3)
     lr_schedule = bool_input("Enable learning rate scheduling?", default=True)
-    lmbda = unit_interval_input("Lambda", default=0.9)
-    gamma = unit_interval_input("Gamma", default=0.95)
+    lmbda = unit_interval_input("Lambda", default=0.95)
+    gamma = unit_interval_input("Gamma", default=0.98)
     eps = unit_interval_input("Epsilon for clip", default=0.2)
     epochs = numeric_input("Number of epochs", int, default=10, min_val=1)
 
@@ -109,6 +113,7 @@ def setup_ppo() -> dict:
     return {
         "agent_params": {
             "hidden_dim": hidden_dim,
+            "hidden_layer": hidden_layer,
             "actor_lr": actor_lr,
             "critic_lr": critic_lr,
             "lr_schedule": lr_schedule,
@@ -201,8 +206,9 @@ def train(settings: dict) -> None:
     env.seed(seed)
     torch.manual_seed(seed)
 
-    state_dim = 314
+    state_dim = len(env.game.to_numpy())
     action_dim = env.action_space.shape[0]
+    print(f"State dim: {state_dim}, Action dim: {action_dim}")
 
     timestamp = datetime.strftime(datetime.utcnow(), "%y%m%d%H%M%S")
     if settings["agent"] == "GAIL":
@@ -214,7 +220,8 @@ def train(settings: dict) -> None:
         return_list, n_action_list = train_gail(env, agent, gail, expert_data, model_dir, **settings["train_params"])
     elif settings["agent"] == "PPO":
         agent = PPO(state_dim=state_dim, action_dim=action_dim, **settings["agent_params"])
-        model_name = f'PPO_{settings["agent_params"]["hidden_dim"]}_{timestamp}'
+        hidden_layer, hidden_dim = settings["agent_params"]["hidden_layer"], settings["agent_params"]["hidden_dim"]
+        model_name = f'PPO_{hidden_layer}_{hidden_dim}_{timestamp}'
         model_dir = os.path.join("./trained_models/", model_name)
         return_list, n_action_list = train_on_policy(env, agent, model_dir, **settings["train_params"])
     elif settings["agent"] == "SAC":

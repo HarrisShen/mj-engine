@@ -77,7 +77,6 @@ class DQN(Agent):
         self.gamma = gamma
         self.epsilon = epsilon
         self.target_update = target_update
-        self.count = 0
         self.device = device
 
     def take_action(self, state: np.ndarray, option: np.ndarray) -> int:
@@ -121,7 +120,7 @@ class DQN(Agent):
         if self.count % self.target_update == 0:
             self.target_q_net.load_state_dict(self.q_net.state_dict())
 
-        self.count += 1
+        self.step()
 
     def save(self, model_dir, checkpoint=None) -> str:
         if not os.path.isdir(model_dir):

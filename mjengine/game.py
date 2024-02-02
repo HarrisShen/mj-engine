@@ -42,7 +42,7 @@ class Game:
         self.register_players()
         self.current_player = 0
         self.acting_player = -1
-        self.option = None
+        self.option = Option()
         self.acting_queue = None
         self.waiting = []
 
@@ -371,7 +371,8 @@ class Game:
             "current_player": self.current_player,
             "acting_player": self.acting_player,
             "players": [p.to_dict(hide_hand=(as_player is not None and i != as_player)) 
-                        for i, p in enumerate(self.players)]
+                        for i, p in enumerate(self.players)],
+            "option": self.option.to_numpy()
         }
 
     def to_numpy(self, as_player: int | None = None) -> np.ndarray:
