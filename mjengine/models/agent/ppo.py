@@ -79,7 +79,7 @@ class PPO(Agent):
     """
     def __init__(self, state_dim, hidden_dim, action_dim, hidden_layer, actor_lr, critic_lr, lr_schedule,
                  lmbda, epochs, eps, gamma, device, train=True):
-        super().__init__(train)
+        super().__init__(device, train)
 
         self.state_dim = state_dim
         self.hidden_dim = hidden_dim
@@ -103,8 +103,6 @@ class PPO(Agent):
         self.gamma = gamma
         self.lmbda = lmbda
         self.eps = eps  # PPO clip range
-
-        self.device = device
 
     def take_action(self, state, option):
         state = torch.from_numpy(state.astype(np.float32)).to(self.device)
@@ -156,6 +154,7 @@ class PPO(Agent):
         if self.lr_schedule:
             self.actor_scheduler.step()
             self.critic_scheduler.step()
+
         self.step()
 
     def save(self, model_dir, checkpoint=None) -> str:
@@ -190,16 +189,16 @@ class PPO(Agent):
         torch.save(model_state, os.path.join(model_dir, filename))
         return model_dir
 
-    @staticmethod
-    def restore(model_dir: str, device: torch.device, train: bool = False, checkpoint: int | None = None):
-        with open(os.path.join(model_dir, "model_settings.json"), "r") as f:
-            kwargs = json.load(f)
-        obj = PPO(train=train, device=device, **kwargs)
-        state_file = "model_state.pt" if checkpoint is None else f"model_state_cp_{checkpoint}.pt"
-        model_state = torch.load(os.path.join(model_dir, state_file))
-        for k, v in model_state.items():
-            if isinstance(v, dict):  # restore from state dict
-                getattr(obj, k).load_state_dict(model_state[k])
-            else:
-                setattr(obj, k, model_state[k])
-        return obj
+    # @staticmethod
+    # def restore(model_dir: str, device: str | torch.device, train: bool = False, checkpoint: int | None = None):
+    #     with open(os.path.join(model_dir, "model_settings.json"), "r") as f:
+    #         kwargs = json.load(f)
+    #     obj = PPO(train=train, device=device, **kwargs)
+    #     state_file = "model_state.pt" if checkpoint is None else f"model_state_cp_{checkpoint}.pt"
+    #     model_state = torch.load(os.path.join(model_dir, state_file))
+    #     for k, v in model_state.items():
+    #         if isinstance(v, dict):  # restore from state dict
+    #             getattr(obj, k).load_state_dict(model_state[k])
+    #         else:
+    #             setattr(obj, k, model_state[k])
+    #     return obj

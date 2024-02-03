@@ -16,7 +16,7 @@ from mjengine.models.agent.ppo import PolicyNet
 class SAC(Agent):
     def __init__(self, state_dim, hidden_dim, action_dim, actor_lr, critic_lr,
                  alpha_lr, target_entropy, tau, gamma, device, train=True):
-        super().__init__(train)
+        super().__init__(device, train)
 
         self.state_dim = state_dim
         self.hidden_dim = hidden_dim
@@ -45,9 +45,6 @@ class SAC(Agent):
         self.target_entropy = target_entropy
         self.gamma = gamma
         self.tau = tau
-        self.device = device
-
-        self.n_episode = 0
 
     def take_action(self, state, option):
         state = torch.from_numpy(state.astype(np.float32)).to(self.device)
@@ -126,7 +123,7 @@ class SAC(Agent):
         self.soft_update(self.critic_1, self.target_critic_1)
         self.soft_update(self.critic_2, self.target_critic_2)
 
-        self.n_episode += 1
+        self.step()
 
     def save(self, model_dir: str, checkpoint: int | None = None) -> str:
         if not os.path.isdir(model_dir):

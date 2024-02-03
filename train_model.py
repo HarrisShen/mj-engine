@@ -20,6 +20,16 @@ from mjengine.models.utils import ReplayBuffer
 def setup() -> dict:
     print("[Mahjong model - training setup]")
 
+    mode = input("Training mode ([N]ew or [L]oad): ").lower()
+    if mode == "l":
+        return setup_load()
+    if mode == "n":
+        return setup_new()
+    else:
+        exit(1)
+
+
+def setup_new():
     agent_type = input("Agent/algorithm type: ").lower()
     if agent_type not in ["gail", "ppo", "sac", "dqn", "random", "analyzer", "value", "exp0", "exp1"]:
         exit(1)
@@ -55,6 +65,30 @@ def setup() -> dict:
         **train_settings,
         **agent_settings
     }, setup)
+
+
+def setup_load() -> dict:
+    model_dir = input("Load from dir: ")
+    if not os.path.isdir(model_dir):
+        print(f'"{model_dir}" is not a valid directory')
+        exit(1)
+    model_name = os.path.split(model_dir)[-1]
+    if model_name.startswith("PPO"):
+        with open(os.path.join(model_dir, "training_settings.json"), "r") as f:
+            print(f"training_settings: {f.read()}")
+        train_settings = setup_train()
+        agent_settings = setup_ppo()
+        # for k, v in agent_settings.items():
+        #     setattr(agent, k, v)
+        settings = confirm_inputs("Settings", {
+            "agent": "PPO",
+            **train_settings,
+            **agent_settings
+        }, setup)
+        return {**settings, "load_from": model_dir}
+
+    print(f"Unsupported model type")
+    exit(1)
 
 
 def setup_train() -> dict:
@@ -219,7 +253,16 @@ def train(settings: dict) -> None:
         expert_data = "./trained_models/exp1_240128183233/state_action_replay.npz"
         return_list, n_action_list = train_gail(env, agent, gail, expert_data, model_dir, **settings["train_params"])
     elif settings["agent"] == "PPO":
-        agent = PPO(state_dim=state_dim, action_dim=action_dim, **settings["agent_params"])
+        if settings.get("load_from"):
+            agent = PPO.restore(settings["load_from"], settings["agent_params"]["device"], train=True)
+            for k, v in settings["agent_params"].items():
+                if k == "device":
+                    continue
+                setattr(agent, k, v)
+            agent.actor_optimizer.param_groups[0]["lr"] = settings["agent_params"]["actor_lr"]
+            agent.critic_optimizer.param_groups[0]["lr"] = settings["agent_params"]["critic_lr"]
+        else:
+            agent = PPO(state_dim=state_dim, action_dim=action_dim, **settings["agent_params"])
         hidden_layer, hidden_dim = settings["agent_params"]["hidden_layer"], settings["agent_params"]["hidden_dim"]
         model_name = f'PPO_{hidden_layer}_{hidden_dim}_{timestamp}'
         model_dir = os.path.join("./trained_models/", model_name)

@@ -51,7 +51,7 @@ class DQN(Agent):
             state_dim, hidden_dim, action_dim,
             lr, gamma, epsilon, target_update,
             device, algorithm="DQN", train=True):
-        super().__init__(train)
+        super().__init__(device, train)
 
         self.state_dim = state_dim
         self.hidden_dim = hidden_dim
@@ -77,7 +77,6 @@ class DQN(Agent):
         self.gamma = gamma
         self.epsilon = epsilon
         self.target_update = target_update
-        self.device = device
 
     def take_action(self, state: np.ndarray, option: np.ndarray) -> int:
         if self.train and np.random.random() < self.epsilon:
