@@ -78,8 +78,6 @@ def setup_load() -> dict:
             print(f"training_settings: {f.read()}")
         train_settings = setup_train()
         agent_settings = setup_ppo()
-        # for k, v in agent_settings.items():
-        #     setattr(agent, k, v)
         settings = confirm_inputs("Settings", {
             "agent": "PPO",
             **train_settings,
@@ -104,7 +102,7 @@ def setup_train() -> dict:
     if eval_params["evaluate"]:
         eval_params["benchmark"] = numeric_input("Benchmark strategy",
                                                  int, default=1, choice={1: "random", 2: "random1"})
-        eval_params["game_limit"] = numeric_input("Number of games", int, default=128, min_val=1)
+        eval_params["game_limit"] = numeric_input("Number of games", int, default=1000, min_val=1)
         eval_params["seed"] = numeric_input("Random seed for game simulation: ", int, default=0)
     return {
         "seed": seed,
@@ -130,8 +128,8 @@ def setup_gail() -> dict:
 
 def setup_ppo() -> dict:
     print("=" * 20 + " PPO params " + "=" * 20)
-    hidden_dim = numeric_input("Hidden dimension", int, default=128, min_val=1)
-    hidden_layer = numeric_input("Number of hidden layer", int, default=1, choice=[1, 2])
+    hidden_dim = numeric_input("Hidden dimension", int, default=256, min_val=1)
+    hidden_layer = numeric_input("Number of hidden layer", int, default=1, min_val=1)
     actor_lr = unit_interval_input("Initial learning rate of actor", default=1e-4)
     critic_lr = unit_interval_input("Initial learning rate of critic", default=1e-3)
     lr_schedule = bool_input("Enable learning rate scheduling?", default=True)

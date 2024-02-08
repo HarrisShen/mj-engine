@@ -4,6 +4,7 @@ import os
 import numpy as np
 import torch
 from torch.nn import functional as F
+from torch.nn import Linear, ModuleList
 from torch.optim import lr_scheduler
 
 from mjengine.models.agent import Agent
@@ -16,16 +17,14 @@ class PolicyNet(torch.nn.Module):
     def __init__(self, state_dim, hidden_dim, action_dim, hidden_layer=1):
         super(PolicyNet, self).__init__()
         self.hidden_layer = hidden_layer
-        self.input = torch.nn.Linear(state_dim, hidden_dim)
-        if self.hidden_layer == 2:
-            self.hidden = torch.nn.Linear(hidden_dim, hidden_dim)
-        self.output = torch.nn.Linear(hidden_dim, action_dim)
+        self.layers = ModuleList([Linear(state_dim, hidden_dim)])
+        self.layers.extend([Linear(hidden_dim, hidden_dim) for _ in range(self.hidden_layer - 1)])
+        self.layers.append(Linear(hidden_dim, action_dim))
 
     def forward(self, x):
-        x = F.relu(self.input(x))
-        if self.hidden_layer == 2:
-            x = F.relu(self.hidden(x))
-        return F.softmax(self.output(x), dim=-1)
+        for i in range(len(self.layers) - 1):
+            x = F.relu(self.layers[i](x))
+        return F.softmax(self.layers[-1](x), dim=-1)
 
 
 class ValueNet(torch.nn.Module):
@@ -35,16 +34,14 @@ class ValueNet(torch.nn.Module):
     def __init__(self, state_dim, hidden_dim, hidden_layer=1):
         super(ValueNet, self).__init__()
         self.hidden_layer = hidden_layer
-        self.input = torch.nn.Linear(state_dim, hidden_dim)
-        if self.hidden_layer == 2:
-            self.hidden = torch.nn.Linear(hidden_dim, hidden_dim)
-        self.output = torch.nn.Linear(hidden_dim, 1)
+        self.layers = ModuleList([Linear(state_dim, hidden_dim)])
+        self.layers.extend([Linear(hidden_dim, hidden_dim) for _ in range(self.hidden_layer - 1)])
+        self.layers.append(Linear(hidden_dim, 1))
 
     def forward(self, x):
-        x = F.relu(self.input(x))
-        if self.hidden_layer == 2:
-            x = F.relu(self.hidden(x))
-        return self.output(x)
+        for i in range(len(self.layers) - 1):
+            x = F.relu(self.layers[i](x))
+        return self.layers[-1](x)
 
 
 def compute_advantage(gamma, lmbda, td_delta):

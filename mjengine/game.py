@@ -111,8 +111,15 @@ class Game:
     and whether the action can be applied to the game, since other players may have made
     decisions that have the same or higher priority - e.g. multiple players can win by chuck.
     """
-    def play(self) -> None:
-        while not self.is_finished():
+    def play(self, rounds: int | None = None, games: int | None = None) -> None:
+        if rounds is not None and games is not None:
+            raise ValueError("Cannot set rounds and games at same time")
+        if rounds is None:
+            rounds = float("inf")
+        if games is None:
+            games = float("inf")
+        curr_r, curr_g = 0, 0
+        while not self.is_finished() and curr_r < rounds and curr_g < games:
             self.reset()
             logging.info(f"Round {self.round} - Dealer is Player {self.dealer} now.")
             self.start_game()
@@ -132,7 +139,9 @@ class Game:
                 # end of a round
                 if self.dealer == 0:
                     self.round += 1
+                    curr_r += 1
             self.games += 1
+            curr_g += 1
             logging.info(self.score_summary(detail=0))
 
     def is_finished(self) -> bool:

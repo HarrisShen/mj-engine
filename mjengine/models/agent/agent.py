@@ -7,7 +7,7 @@ import torch
 
 
 class Agent(ABC):
-    def __init__(self, device: str | torch.device, train: bool = True):
+    def __init__(self, device: str | torch.device, train: bool = True, **kwargs):
         self.device = device
         self.train = train
 
@@ -27,11 +27,6 @@ class Agent(ABC):
     @abstractmethod
     def save(self, model_dir: str, checkpoint: int | None = None) -> str:
         pass
-
-    # @staticmethod
-    # @abstractmethod
-    # def restore(model_dir: str, device: torch.device, train: bool = False):
-    #     pass
 
     @classmethod
     def restore(

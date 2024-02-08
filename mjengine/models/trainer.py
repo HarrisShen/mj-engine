@@ -1,3 +1,5 @@
+from typing import Callable
+
 import numpy as np
 from gymnasium import Env
 from scipy.sparse import load_npz
@@ -20,7 +22,7 @@ def train_gail(
         n_episode: int,
         n_checkpoint: int,
         save_checkpoint: bool,
-        evaluate: bool = False, **kwargs) -> tuple[list, list]:
+        evaluate: bool, **kwargs) -> tuple[list, list]:
     expert_data = load_npz(expert_data).toarray().astype(np.int64)
     expert_s, expert_a = expert_data[:, :-1], expert_data[:, -1]
     print(f"Loaded {expert_data.shape[0]} state-action pairs from expert")
@@ -62,7 +64,7 @@ def train_gail(
                     })
                 pbar.update(1)
         if evaluate:
-            eval_agent(agent, **kwargs)
+            eval_agent(i, agent, **kwargs)
         if i + 1 < n_checkpoint and save_checkpoint:
             agent.save(model_dir, i + 1)
     agent.save(model_dir)
@@ -76,7 +78,7 @@ def train_on_policy(
         n_episode: int,
         n_checkpoint: int,
         save_checkpoint: bool,
-        evaluate: bool = False, **kwargs) -> tuple[list, list]:
+        evaluate: bool, **kwargs) -> tuple[list, list]:
     if n_checkpoint == 0:
         n_checkpoint = 1
     return_list, n_action_list = [], []
@@ -107,12 +109,12 @@ def train_on_policy(
                     pbar.set_postfix({
                         'epi': '%d' % (n_episode / 10 * i + i_episode + 1),
                         'ret': '%.3f' % np.mean(return_list[-10:]),
-                        'a r': '%.3f' % (np.sum(return_list[-10:]) / np.sum(n_action_list[-10:])),
-                        'n a': '%.1f' % np.mean(n_action_list[-10:])
+                        'r/a': '%.3f' % (np.sum(return_list[-10:]) / np.sum(n_action_list[-10:])),
+                        'a/e': '%.1f' % np.mean(n_action_list[-10:])
                     })
                 pbar.update(1)
         if evaluate:
-            eval_agent(agent, **kwargs)
+            eval_agent(i, agent, **kwargs)
         if i + 1 < n_checkpoint and save_checkpoint:
             agent.save(model_dir, i + 1)
     agent.save(model_dir)
@@ -167,14 +169,14 @@ def train_off_policy(
                 n_action_list.append(episode_actions)
                 if (i_episode + 1) % 10 == 0:
                     pbar.set_postfix({
-                        'epi.': '%d' % (n_episode / 10 * i + i_episode + 1),
-                        'ret.': '%.3f' % np.mean(return_list[-10:]),
-                        'a. r.': '%.3f' % (np.sum(return_list[-10:]) / np.sum(n_action_list[-10:])),
-                        'n. a.': '%.1f' % np.mean(n_action_list[-10:])
+                        'epi': '%d' % (n_episode / 10 * i + i_episode + 1),
+                        'ret': '%.3f' % np.mean(return_list[-10:]),
+                        'r/a': '%.3f' % (np.sum(return_list[-10:]) / np.sum(n_action_list[-10:])),
+                        'a/e': '%.1f' % np.mean(n_action_list[-10:])
                     })
                 pbar.update(1)
         if evaluate:
-            eval_agent(agent, **kwargs)
+            eval_agent(i, agent, **kwargs)
         if i + 1 < n_checkpoint and save_checkpoint:
             agent.save(model_dir, i + 1)
     agent.save(model_dir)
@@ -182,9 +184,9 @@ def train_off_policy(
 
 
 def eval_agent(
+        index: int,
         agent: Agent,
         benchmark: str,
-        round_limit: int | None = None,
         game_limit: int | None = None, **kwargs) -> None:
     agent_train_cp = agent.train
     agent.train = False
@@ -192,12 +194,19 @@ def eval_agent(
     players.append(Player(RLAgentStrategy(agent)))
     game = Game(
         players=players,
-        round_limit=round_limit,
         game_limit=game_limit,
         **kwargs)
-    game.play()
-    summary = game.players[3].summary(game.games)
-    print(f"Eval. vs '{benchmark}': games={game_limit}, score/g.={summary['avg_score']:.4f}, "
-          f"win%={summary['win_rate'] * 100:.3f}, s.w.%={summary['self_win_rate'] * 100:.3f}, "
-          f"chuck%={summary['chuck_rate'] * 100:.3f}")
+    with tqdm(total=int(game_limit), desc=f'Eval. {index}') as pbar:
+        for i_game in range(game_limit):
+            game.play(games=1)
+            if (i_game + 1) % 10 == 0:
+                summary = game.players[3].summary(game.games)
+                pbar.set_postfix({
+                    "vs": benchmark,
+                    "s/g": f"{summary['avg_score']:.3f}",
+                    "win%": f"{summary['win_rate'] * 100:.1f}",
+                    "s.w%": f"{summary['self_win_rate'] * 100:.1f}",
+                    "c%": f"{summary['chuck_rate'] * 100:.1f}"
+                })
+            pbar.update(1)
     agent.train = agent_train_cp
