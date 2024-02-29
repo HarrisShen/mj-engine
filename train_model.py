@@ -132,7 +132,8 @@ def setup_ppo() -> dict:
     hidden_layer = numeric_input("Number of hidden layer", int, default=1, min_val=1)
     actor_lr = unit_interval_input("Initial learning rate of actor", default=1e-4)
     critic_lr = unit_interval_input("Initial learning rate of critic", default=1e-3)
-    lr_schedule = bool_input("Enable learning rate scheduling?", default=True)
+    lr_schedule = bool_input("Enable learning rate scheduling?", default=False)
+    clip_grad = bool_input("Enable gradient clipping?", default=False)
     lmbda = unit_interval_input("Lambda", default=0.95)
     gamma = unit_interval_input("Gamma", default=0.98)
     eps = unit_interval_input("Epsilon for clip", default=0.2)
@@ -149,6 +150,7 @@ def setup_ppo() -> dict:
             "actor_lr": actor_lr,
             "critic_lr": critic_lr,
             "lr_schedule": lr_schedule,
+            "clip_grad": clip_grad,
             "lmbda": lmbda,
             "gamma": gamma,
             "eps": eps,
@@ -198,7 +200,13 @@ def setup_dqn() -> dict:
     print("=" * 20 + " DQN params " + "=" * 20)
     algorithm = numeric_input("Algorithm", int, default=1,
                               choice={1: "DQN", 2: "DoubleDQN", 3: "DuelingDQN"})
+    ###################################################################################
+    if algorithm == 3:
+        print("Error: DuelingDQN is temporarily disabled.")
+        exit(1)
+    ###################################################################################
     hidden_dim = numeric_input("Hidden dimension", int, default=128, min_val=1)
+    hidden_layer = numeric_input("Number of hidden layer", int, default=1, min_val=1)
     lr = unit_interval_input("Learning rate", default=1e-4)
     gamma = unit_interval_input("Gamma", default=0.98)
     epsilon = unit_interval_input("Epsilon", default=0.05)
@@ -220,6 +228,7 @@ def setup_dqn() -> dict:
         "agent_params": {
             "algorithm": algorithm,
             "hidden_dim": hidden_dim,
+            "hidden_layer": hidden_layer,
             "lr": lr,
             "gamma": gamma,
             "epsilon": epsilon,
@@ -274,9 +283,10 @@ def train(settings: dict) -> None:
     elif settings["agent"] == "DQN":
         replay_buffer = ReplayBuffer(settings["buffer_params"]["buffer_size"])
         agent = DQN(state_dim=state_dim, action_dim=action_dim, **settings["agent_params"])
+        hidden_layer, hidden_dim = settings["agent_params"]["hidden_layer"], settings["agent_params"]["hidden_dim"]
         algorithm = settings["agent_params"]["algorithm"]
         algorithm = "default" if algorithm == "DQN" else algorithm
-        model_name = f'DQN_{settings["agent_params"]["hidden_dim"]}_{algorithm}_{timestamp}'
+        model_name = f'DQN_{hidden_layer}_{hidden_dim}_{algorithm}_{timestamp}'
         model_dir = os.path.join("./trained_models/", model_name)
         return_list, n_action_list = train_off_policy(env, agent, replay_buffer, model_dir, **settings["train_params"])
     else:

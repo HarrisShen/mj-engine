@@ -4,44 +4,10 @@ import os
 import numpy as np
 import torch
 from torch.nn import functional as F
-from torch.nn import Linear, ModuleList
 from torch.optim import lr_scheduler
 
 from mjengine.models.agent import Agent
-
-
-class PolicyNet(torch.nn.Module):
-    """
-    Source: https://hrl.boyuai.com/chapter/2/ppo%E7%AE%97%E6%B3%95/
-    """
-    def __init__(self, state_dim, hidden_dim, action_dim, hidden_layer=1):
-        super(PolicyNet, self).__init__()
-        self.hidden_layer = hidden_layer
-        self.layers = ModuleList([Linear(state_dim, hidden_dim)])
-        self.layers.extend([Linear(hidden_dim, hidden_dim) for _ in range(self.hidden_layer - 1)])
-        self.layers.append(Linear(hidden_dim, action_dim))
-
-    def forward(self, x):
-        for i in range(len(self.layers) - 1):
-            x = F.relu(self.layers[i](x))
-        return F.softmax(self.layers[-1](x), dim=-1)
-
-
-class ValueNet(torch.nn.Module):
-    """
-    Source: https://hrl.boyuai.com/chapter/2/ppo%E7%AE%97%E6%B3%95/
-    """
-    def __init__(self, state_dim, hidden_dim, hidden_layer=1):
-        super(ValueNet, self).__init__()
-        self.hidden_layer = hidden_layer
-        self.layers = ModuleList([Linear(state_dim, hidden_dim)])
-        self.layers.extend([Linear(hidden_dim, hidden_dim) for _ in range(self.hidden_layer - 1)])
-        self.layers.append(Linear(hidden_dim, 1))
-
-    def forward(self, x):
-        for i in range(len(self.layers) - 1):
-            x = F.relu(self.layers[i](x))
-        return self.layers[-1](x)
+from mjengine.models.agent.net import PolicyNet, ValueNet
 
 
 def compute_advantage(gamma, lmbda, td_delta):
@@ -74,8 +40,10 @@ class PPO(Agent):
     """
     Source: https://hrl.boyuai.com/chapter/2/ppo%E7%AE%97%E6%B3%95/
     """
-    def __init__(self, state_dim, hidden_dim, action_dim, hidden_layer, actor_lr, critic_lr, lr_schedule,
-                 lmbda, epochs, eps, gamma, device, train=True):
+    def __init__(
+            self, state_dim, hidden_dim, action_dim, hidden_layer,
+            actor_lr, critic_lr, lr_schedule, clip_grad,
+            lmbda, epochs, eps, gamma, device, train=True):
         super().__init__(device, train)
 
         self.state_dim = state_dim
@@ -95,6 +63,8 @@ class PPO(Agent):
         self.lr_schedule = lr_schedule
         self.actor_scheduler = lr_scheduler.LambdaLR(self.actor_optimizer, adjust_lr)
         self.critic_scheduler = lr_scheduler.LambdaLR(self.critic_optimizer, adjust_lr)
+
+        self.clip_grad = clip_grad
 
         self.epochs = epochs  # number of repetitions
         self.gamma = gamma
@@ -144,8 +114,9 @@ class PPO(Agent):
             self.critic_optimizer.zero_grad()
             actor_loss.backward()
             critic_loss.backward()
-            # torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 0.1)
-            # torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 0.1)
+            if self.clip_grad:
+                torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 0.1)
+                torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 0.1)
             self.actor_optimizer.step()
             self.critic_optimizer.step()
         if self.lr_schedule:
@@ -168,6 +139,7 @@ class PPO(Agent):
                     "actor_lr": self.actor_lr,
                     "critic_lr": self.critic_lr,
                     "lr_schedule": self.lr_schedule,
+                    "clip_grad": self.clip_grad,
                     "lmbda": self.lmbda,
                     "gamma": self.gamma,
                     "eps": self.eps,
@@ -185,17 +157,3 @@ class PPO(Agent):
         filename = "model_state.pt" if checkpoint is None else f"model_state_cp_{checkpoint}.pt"
         torch.save(model_state, os.path.join(model_dir, filename))
         return model_dir
-
-    # @staticmethod
-    # def restore(model_dir: str, device: str | torch.device, train: bool = False, checkpoint: int | None = None):
-    #     with open(os.path.join(model_dir, "model_settings.json"), "r") as f:
-    #         kwargs = json.load(f)
-    #     obj = PPO(train=train, device=device, **kwargs)
-    #     state_file = "model_state.pt" if checkpoint is None else f"model_state_cp_{checkpoint}.pt"
-    #     model_state = torch.load(os.path.join(model_dir, state_file))
-    #     for k, v in model_state.items():
-    #         if isinstance(v, dict):  # restore from state dict
-    #             getattr(obj, k).load_state_dict(model_state[k])
-    #         else:
-    #             setattr(obj, k, model_state[k])
-    #     return obj

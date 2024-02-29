@@ -9,8 +9,7 @@ import torch
 import torch.nn.functional as F
 
 from mjengine.models.agent import Agent
-from mjengine.models.agent.dqn import QNet
-from mjengine.models.agent.ppo import PolicyNet
+from mjengine.models.agent.net import PolicyNet, QNet
 
 
 class SAC(Agent):

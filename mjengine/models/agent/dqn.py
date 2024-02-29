@@ -1,61 +1,29 @@
 import json
 import os
 import pickle
-from datetime import datetime
 
 import numpy as np
 import torch
-from torch.nn import Module, Linear, functional as F
+from torch.nn import functional as F
 from torch.optim import Adam
 
 from mjengine.models.agent import Agent
+from mjengine.models.agent.net import QNet, VANet
 
 DQN_ALGORITHMS = ["DQN", "DoubleDQN", "DuelingDQN"]
 
 
-class QNet(Module):
-    """
-    Source: https://hrl.boyuai.com/chapter/2/dqn%E7%AE%97%E6%B3%95
-    """
-    def __init__(self, state_dim, hidden_dim, action_dim):
-        super(QNet, self).__init__()
-        self.input = Linear(state_dim, hidden_dim)
-        self.output = Linear(hidden_dim, action_dim)
-
-    def forward(self, x):
-        x = F.relu(self.input(x))
-        x = self.output(x)
-        return x
-
-
-class VANet(Module):
-    """
-    Source: https://hrl.boyuai.com/chapter/2/dqn%E6%94%B9%E8%BF%9B%E7%AE%97%E6%B3%95/
-    """
-    def __init__(self, state_dim, hidden_dim, action_dim):
-        super(VANet, self).__init__()
-        self.fc1 = torch.nn.Linear(state_dim, hidden_dim)
-        self.fc_A = torch.nn.Linear(hidden_dim, action_dim)
-        self.fc_V = torch.nn.Linear(hidden_dim, 1)
-
-    def forward(self, x):
-        A = self.fc_A(F.relu(self.fc1(x)))
-        V = self.fc_V(F.relu(self.fc1(x)))
-        Q = V + A - A.mean(-1, keepdim=True)
-        return Q
-
-
 class DQN(Agent):
     def __init__(
-            self,
-            state_dim, hidden_dim, action_dim,
-            lr, gamma, epsilon, target_update,
-            device, algorithm="DQN", train=True):
+            self, state_dim, hidden_dim, action_dim, hidden_layer,
+            lr, gamma, epsilon, target_update, device,
+            algorithm="DQN", train=True):
         super().__init__(device, train)
 
         self.state_dim = state_dim
         self.hidden_dim = hidden_dim
         self.action_dim = action_dim
+        self.hidden_layer = hidden_layer
 
         self.algorithm = "DQN" if algorithm == "default" else algorithm
         if self.algorithm not in DQN_ALGORITHMS:
@@ -67,9 +35,9 @@ class DQN(Agent):
             self.target_q_net = VANet(state_dim, hidden_dim, action_dim)
             self.target_q_net.to(device)
         else:
-            self.q_net = QNet(state_dim, hidden_dim, action_dim)
+            self.q_net = QNet(state_dim, hidden_dim, action_dim, hidden_layer)
             self.q_net.to(device)
-            self.target_q_net = QNet(state_dim, hidden_dim, action_dim)
+            self.target_q_net = QNet(state_dim, hidden_dim, action_dim, hidden_layer)
             self.target_q_net.to(device)
 
         self.lr = lr
@@ -131,6 +99,7 @@ class DQN(Agent):
                     "state_dim": self.state_dim,
                     "hidden_dim": self.hidden_dim,
                     "action_dim": self.action_dim,
+                    "hidden_layer": self.hidden_layer,
                     "lr": self.lr,
                     "gamma": self.gamma,
                     "epsilon": self.epsilon,
@@ -147,17 +116,17 @@ class DQN(Agent):
         torch.save(model_state, os.path.join(model_dir, filename))
         return model_dir
 
-    @staticmethod
-    def restore(model_dir, device, train: bool = False):
-        with open(os.path.join(model_dir, "model_settings.json"), "r") as f:
-            kwargs = json.load(f)
-        kwargs["device"] = device
-        obj = DQN(**kwargs)
-        with open(os.path.join(model_dir, "model_state.pkl"), "rb") as f:
-            attributes = pickle.load(f)
-        obj.__dict__.update(attributes)
-        state_dict = torch.load(os.path.join(model_dir, "q_net.pt"))
-        obj.q_net.load_state_dict(state_dict)
-        state_dict = torch.load(os.path.join(model_dir, "target_q_net.pt"))
-        obj.target_q_net.load_state_dict(state_dict)
-        return obj
+    # @staticmethod
+    # def restore(model_dir, device, train: bool = False):
+    #     with open(os.path.join(model_dir, "model_settings.json"), "r") as f:
+    #         kwargs = json.load(f)
+    #     kwargs["device"] = device
+    #     obj = DQN(**kwargs)
+    #     with open(os.path.join(model_dir, "model_state.pkl"), "rb") as f:
+    #         attributes = pickle.load(f)
+    #     obj.__dict__.update(attributes)
+    #     state_dict = torch.load(os.path.join(model_dir, "q_net.pt"))
+    #     obj.q_net.load_state_dict(state_dict)
+    #     state_dict = torch.load(os.path.join(model_dir, "target_q_net.pt"))
+    #     obj.target_q_net.load_state_dict(state_dict)
+    #     return obj
