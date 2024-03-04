@@ -4,7 +4,6 @@ import random
 from datetime import datetime
 
 import numpy as np
-import pandas as pd
 import scipy as sp
 import torch
 
@@ -73,20 +72,29 @@ def setup_load() -> dict:
         print(f'"{model_dir}" is not a valid directory')
         exit(1)
     model_name = os.path.split(model_dir)[-1]
-    if model_name.startswith("PPO"):
-        with open(os.path.join(model_dir, "training_settings.json"), "r") as f:
-            print(f"training_settings: {f.read()}")
-        train_settings = setup_train()
-        agent_settings = setup_ppo()
-        settings = confirm_inputs("Settings", {
-            "agent": "PPO",
-            **train_settings,
-            **agent_settings
-        }, setup)
-        return {**settings, "load_from": model_dir}
+    agent_type = model_name.split("_")[0].lower()
+    if agent_type not in ["ppo", "dqn"]:
+        print(f"Unsupported model type")
+        exit(1)
 
-    print(f"Unsupported model type")
-    exit(1)
+    with open(os.path.join(model_dir, "training_settings.json"), "r") as f:
+        print(f"training_settings: {f.read()}")
+    train_settings = setup_train()
+    if agent_type == "ppo":
+        agent_settings = setup_ppo()
+    else:
+        agent_settings = setup_dqn()
+    settings = {
+        "agent": model_name.split("_")[0],
+        **train_settings
+    }
+    for k, v in agent_settings.items():
+        if k in settings:
+            settings[k].update(v)
+        else:
+            settings[k] = v
+    settings = confirm_inputs("Settings", settings, setup)
+    return {**settings, "load_from": model_dir}
 
 
 def setup_train() -> dict:
@@ -205,7 +213,7 @@ def setup_dqn() -> dict:
         print("Error: DuelingDQN is temporarily disabled.")
         exit(1)
     ###################################################################################
-    hidden_dim = numeric_input("Hidden dimension", int, default=128, min_val=1)
+    hidden_dim = numeric_input("Hidden dimension", int, default=256, min_val=1)
     hidden_layer = numeric_input("Number of hidden layer", int, default=1, min_val=1)
     lr = unit_interval_input("Learning rate", default=1e-4)
     gamma = unit_interval_input("Gamma", default=0.98)
@@ -258,7 +266,7 @@ def train(settings: dict) -> None:
         model_name = f'GAIL_PPO_{settings["agent_params"]["hidden_dim"]}_{timestamp}'
         model_dir = os.path.join("./trained_models/", model_name)
         expert_data = "./trained_models/exp1_240128183233/state_action_replay.npz"
-        return_list, n_action_list = train_gail(env, agent, gail, expert_data, model_dir, **settings["train_params"])
+        train_gail(env, agent, gail, expert_data, model_dir, **settings["train_params"])
     elif settings["agent"] == "PPO":
         if settings.get("load_from"):
             agent = PPO.restore(settings["load_from"], settings["agent_params"]["device"], train=True)
@@ -273,36 +281,42 @@ def train(settings: dict) -> None:
         hidden_layer, hidden_dim = settings["agent_params"]["hidden_layer"], settings["agent_params"]["hidden_dim"]
         model_name = f'PPO_{hidden_layer}_{hidden_dim}_{timestamp}'
         model_dir = os.path.join("./trained_models/", model_name)
-        return_list, n_action_list = train_on_policy(env, agent, model_dir, **settings["train_params"])
+        train_on_policy(env, agent, model_dir, **settings["train_params"])
     elif settings["agent"] == "SAC":
         replay_buffer = ReplayBuffer(settings["buffer_params"]["buffer_size"])
         agent = SAC(state_dim=state_dim, action_dim=action_dim, **settings["agent_params"])
         model_name = f'SAC_{settings["agent_params"]["hidden_dim"]}_{timestamp}'
         model_dir = os.path.join("./trained_models/", model_name)
-        return_list, n_action_list = train_off_policy(env, agent, replay_buffer, model_dir, **settings["train_params"])
+        train_off_policy(env, agent, replay_buffer, model_dir, **settings["train_params"])
     elif settings["agent"] == "DQN":
-        replay_buffer = ReplayBuffer(settings["buffer_params"]["buffer_size"])
-        agent = DQN(state_dim=state_dim, action_dim=action_dim, **settings["agent_params"])
+        if settings.get("load_from"):
+            replay_buffer = ReplayBuffer.restore(settings["load_from"])
+            agent = DQN.restore(settings["load_from"], settings["agent_params"]["device"], train=True)
+            for k, v in settings["agent_params"].items():
+                if k == "device":
+                    continue
+                setattr(agent, k, v)
+        else:
+            replay_buffer = ReplayBuffer(settings["buffer_params"]["buffer_size"])
+            agent = DQN(state_dim=state_dim, action_dim=action_dim, **settings["agent_params"])
         hidden_layer, hidden_dim = settings["agent_params"]["hidden_layer"], settings["agent_params"]["hidden_dim"]
         algorithm = settings["agent_params"]["algorithm"]
         algorithm = "default" if algorithm == "DQN" else algorithm
         model_name = f'DQN_{hidden_layer}_{hidden_dim}_{algorithm}_{timestamp}'
         model_dir = os.path.join("./trained_models/", model_name)
-        return_list, n_action_list = train_off_policy(env, agent, replay_buffer, model_dir, **settings["train_params"])
+        train_off_policy(env, agent, replay_buffer, model_dir, **settings["train_params"])
     else:
         replay_buffer = ReplayBuffer(None)
         agent = Deterministic(env.game, settings["agent"])
         model_name = f"{agent.strategy}_{timestamp}"
         model_dir = os.path.join("./trained_models/", model_name)
-        return_list, n_action_list = train_off_policy(
+        train_off_policy(
             env, agent, replay_buffer, model_dir,
             minimal_size=int(1e9), batch_size=int(1e8), **settings["train_params"])
         replay_mtx = sp.sparse.csr_matrix(np.array([np.concatenate((s, [a])) for s, a, _, _, _ in replay_buffer],
                                                    dtype=int))
         sp.sparse.save_npz(os.path.join(model_dir, "state_action_replay.npz"), replay_mtx)
 
-    df = pd.DataFrame({"episode_return": return_list, "n_action": n_action_list})
-    df.to_csv(os.path.join(model_dir, "train_output.csv"))
     with open(os.path.join(model_dir, "training_settings.json"), "w") as f:
         json.dump(settings, f, indent=2)
     print(f'Training artifacts saved at "{os.path.abspath(model_dir)}"')

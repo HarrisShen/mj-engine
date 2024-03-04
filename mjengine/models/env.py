@@ -1,6 +1,6 @@
 import gymnasium as gym
 import numpy as np
-from gymnasium.spaces import Dict, Discrete, MultiDiscrete, MultiBinary
+from gymnasium.spaces import Dict, Discrete, MultiBinary
 from gymnasium.spaces.utils import flatten_space
 
 from mjengine.analyzer import Analyzer
@@ -65,7 +65,7 @@ MAHJONG_ACTION_SPACE = Dict({
 })
 
 
-def step_reward(shanten_base: int, shanten_real: int, n_exp: int, n_round: int) -> float:
+def step_reward(shanten_real: int, n_exp: int, n_round: int) -> float:
     n_exp_base = min(136, 36 + 20 * (shanten_real - 1))
     low = -(2 ** (shanten_real - 4))
     coef = (1 - min(1.0, n_exp / n_exp_base)) * np.exp((n_round - 8) / 30)
@@ -82,7 +82,7 @@ class MahjongEnv(gym.Env):
         self.game = game
         if self.game is None:
             self.game = Game(verbose=False)
-        self.game.set_seed(seed)
+        self.seed(seed)
 
         self.analyzer = Analyzer()
         self.analyzer.prepare(index_dir)
@@ -100,7 +100,7 @@ class MahjongEnv(gym.Env):
             tile = self.game.players[self.game.current_player].discards[-1]
         acting_player = self.game.acting_player
         player = self.game.players[acting_player]
-        old_st, _, old_wait = self.analyzer(player.hand)
+        # old_st, _, old_wait = self.analyzer(player.hand)
         try:
             self.game.apply_action(action_code, tile)
         except ValueError:
@@ -122,7 +122,7 @@ class MahjongEnv(gym.Env):
         new_st, _, new_wait = self.analyzer(player.hand)
         new_n_exp = sum(self.game.tiles_left(acting_player, new_wait))
         n_round = len(self.game.players[acting_player].discards)
-        reward = step_reward(old_st, new_st, new_n_exp, n_round)
+        reward = step_reward(new_st, new_n_exp, n_round)
         state = self.game.to_numpy()
         self.game.get_option()
         next_player_state = self.game.to_numpy()

@@ -1,4 +1,4 @@
-from typing import Callable
+import os
 
 import numpy as np
 from gymnasium import Env
@@ -81,6 +81,8 @@ def train_on_policy(
         evaluate: bool, **kwargs) -> tuple[list, list]:
     if n_checkpoint == 0:
         n_checkpoint = 1
+    if not os.path.isdir(model_dir):
+        os.makedirs(model_dir)
     return_list, n_action_list = [], []
     for i in range(n_checkpoint):
         with tqdm(total=int(n_episode / n_checkpoint), desc=f'Iter. {i}') as pbar:
@@ -105,6 +107,10 @@ def train_on_policy(
                 return_list.append(episode_return)
                 n_action_list.append(episode_actions)
                 agent.update(**transition_dict)
+                with open(os.path.join(model_dir, "train_output.csv"), "a") as f:
+                    f.write(",".join([
+                        str(n_episode / 10 * i + i_episode + 1),
+                        str(episode_return), str(episode_actions)]) + "\n")
                 if (i_episode + 1) % 10 == 0:
                     pbar.set_postfix({
                         'epi': '%d' % (n_episode / 10 * i + i_episode + 1),
@@ -132,6 +138,10 @@ def train_off_policy(
         minimal_size: int,
         batch_size: int,
         evaluate: bool = False, **kwargs) -> tuple[list, list]:
+    if not os.path.isdir(model_dir):
+        os.makedirs(model_dir)
+    with open(os.path.join(model_dir, "train_output.csv"), "w") as f:
+        f.write(",episode_return,n_action\n")
     return_list, n_action_list = [], []
     for i in range(n_checkpoint):
         with tqdm(total=int(n_episode / n_checkpoint), desc=f'Iter. {i}') as pbar:
@@ -167,6 +177,10 @@ def train_off_policy(
                         agent.update(**transition_dict)
                 return_list.append(episode_return)
                 n_action_list.append(episode_actions)
+                with open(os.path.join(model_dir, "train_output.csv"), "a") as f:
+                    f.write(",".join([
+                        str(n_episode / 10 * i + i_episode + 1),
+                        str(episode_return), str(episode_actions)]) + "\n")
                 if (i_episode + 1) % 10 == 0:
                     pbar.set_postfix({
                         'epi': '%d' % (n_episode / 10 * i + i_episode + 1),
@@ -180,6 +194,7 @@ def train_off_policy(
         if i + 1 < n_checkpoint and save_checkpoint:
             agent.save(model_dir, i + 1)
     agent.save(model_dir)
+    replay_buffer.save(model_dir, compression="bz2")
     return return_list, n_action_list
 
 

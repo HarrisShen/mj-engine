@@ -46,6 +46,8 @@ class Game:
         self.acting_queue = None
         self.waiting = []
 
+        self.action_record = []
+
         self.r = random.Random(seed)
 
         if verbose == 2:
@@ -67,6 +69,7 @@ class Game:
     def reset(self) -> None:
         self.wall = []
         self.status = GameStatus.START
+        self.action_record.clear()
         for i in range(4):
             self.players[i].reset()
 
@@ -215,6 +218,8 @@ class Game:
 
     def apply_action(self, action: PlayerAction, tile: int | None) -> None:
         player = self.acting_player
+        self.action_record.append((player, action, tile,
+                                   None if self.current_player == player else self.current_player))
         if action is None:
             if self.status != GameStatus.DISCARD:
                 raise ValueError("Invalid action")
@@ -381,7 +386,8 @@ class Game:
             "acting_player": self.acting_player,
             "players": [p.to_dict(hide_hand=(as_player is not None and i != as_player)) 
                         for i, p in enumerate(self.players)],
-            "option": self.option.to_numpy()
+            "option": self.option.to_numpy(),
+            "actions": self.action_record
         }
 
     def to_numpy(self, as_player: int | None = None) -> np.ndarray:

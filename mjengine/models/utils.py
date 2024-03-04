@@ -1,3 +1,6 @@
+import bz2
+import os
+import pickle
 from collections import deque
 import random
 
@@ -32,6 +35,32 @@ class ReplayBuffer:
 
     def last_n(self, n):
         return [self.buffer[-(n - i)] for i in range(n)]
+
+    def save(self, model_dir, compression=None):
+        filepath = os.path.join(model_dir, "replay_buffer.pkl")
+        if compression is None:
+            with open(filepath, "wb") as f:
+                pickle.dump(self, f)
+            return
+        if compression == "bz2":
+            with bz2.open(filepath + ".bz2", "wb", compresslevel=9) as f:
+                data = pickle.dumps(self)
+                f.write(data)
+            return
+        raise ValueError(f"Unsupported compression method: {compression}")
+
+    @staticmethod
+    def restore(model_dir):
+        filepath = os.path.join(model_dir, "replay_buffer.pkl")
+        if os.path.isfile(filepath):
+            with open(filepath, "rb") as f:
+                rb = pickle.load(f)
+            return rb
+        if os.path.isfile(filepath + ".bz2"):
+            with bz2.open(filepath + ".bz2", "rb", compresslevel=9) as f:
+                rb = pickle.load(f)
+            return rb
+        raise FileNotFoundError(f"File of replay buffer not found in {model_dir}")
 
 
 def game_numpy_to_dict(state: np.ndarray) -> dict:
@@ -90,6 +119,30 @@ def parse_action(action: int | np.ndarray) -> tuple[PlayerAction | int | None, i
     return PlayerAction.PASS, None
 
 
+def encode_action(action: PlayerAction | None, tile: int | None, donor: int | None) -> int:
+    if tile is not None and (tile < 0 or tile > 33):
+        raise ValueError(f"Invalid tile: {tile}")
+    if action is None:
+        if tile is None:
+            raise ValueError(f"No tile given for discard")
+        return tile
+    if action == PlayerAction.KONG:
+        if donor is None:
+            if tile is None:
+                raise ValueError(f"No tile given for self kong")
+            return tile + 34
+        return 73
+    if action == PlayerAction.WIN:
+        if donor is None:
+            return 68
+        return 74
+    if action == PlayerAction.PONG:
+        return 72
+    if action > PlayerAction.PASS:
+        return action - PlayerAction.CHOW1 + 69
+    return 75  # pass
+
+
 def find_last_discard(state: np.ndarray) -> int:
     tile, n_discards = -1, 0
     for i in range(4):
@@ -112,34 +165,31 @@ def game_dict_to_numpy(state: dict, player: int | None = None) -> np.ndarray:
         else:
             raise ValueError("Game dict is not masked, please specify 'as_player' in 'Game.to_dict()'")
     encoded_state = np.array([])
-    # remaining_tiles = np.array([4 for _ in range(34)])
     for i in range(4):
         pid = (player + i) % 4
         if i == 0:
             encoded_hand = np.array(state["players"][player]["hand"], dtype=np.int32)
-            # remaining_tiles -= encoded_hand
         else:
             encoded_hand = np.array([])
         encoded_exposed = np.zeros(34, dtype=np.int32)
         for meld in state["players"][pid]["exposed"]:
             for tid in meld:
                 encoded_exposed[tid] += 1
-        # remaining_tiles -= encoded_exposed
         encoded_discards = np.zeros(34, dtype=np.int32)
         for j, tid in enumerate(state["players"][pid]["discards"]):
             encoded_discards[tid] += 1
-            # encoded_discards[j * 34 + tid] = 1
-            # remaining_tiles[tid] -= 1
         encoded_state = np.concatenate([
-            encoded_state, encoded_hand,
-            encoded_exposed, encoded_discards
+            encoded_state, [pid], encoded_hand,
+            encoded_exposed, encoded_discards, [0]
         ]).astype(np.int32)
-    encoded_state = np.concatenate([
-        encoded_state,  # remaining_tiles,
-        [
-            state["wall"],   # int(state["status"]),
-            # state["dealer"], state["current_player"],
-            # state["acting_player"]
-        ], state["option"]
-    ]).astype(np.int32)
+    encoded_state = np.concatenate([encoded_state, [state["wall"]], [0], state["options"]]).astype(np.int32)
+
+    # # encode game historstat
+    # encoded_history = np.zeros((128, 77), dtype=np.int32)
+    # for i, (actor, action, tile, donor) in enumerate(state["actions"]):
+    #     pid = (actor - player) % 4
+    #     action_code = encode_action(action, tile, donor)
+    #     encoded_history[i][0] = pid
+    #     encoded_history[i][action_code + 1] = 1
+    # encoded_state = np.concatenate([encoded_state, encoded_history.flatten()])
     return encoded_state

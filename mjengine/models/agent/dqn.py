@@ -1,6 +1,5 @@
 import json
 import os
-import pickle
 
 import numpy as np
 import torch
@@ -115,18 +114,3 @@ class DQN(Agent):
         filename = "model_state.pt" if checkpoint is None else f"model_state_cp_{checkpoint}.pt"
         torch.save(model_state, os.path.join(model_dir, filename))
         return model_dir
-
-    # @staticmethod
-    # def restore(model_dir, device, train: bool = False):
-    #     with open(os.path.join(model_dir, "model_settings.json"), "r") as f:
-    #         kwargs = json.load(f)
-    #     kwargs["device"] = device
-    #     obj = DQN(**kwargs)
-    #     with open(os.path.join(model_dir, "model_state.pkl"), "rb") as f:
-    #         attributes = pickle.load(f)
-    #     obj.__dict__.update(attributes)
-    #     state_dict = torch.load(os.path.join(model_dir, "q_net.pt"))
-    #     obj.q_net.load_state_dict(state_dict)
-    #     state_dict = torch.load(os.path.join(model_dir, "target_q_net.pt"))
-    #     obj.target_q_net.load_state_dict(state_dict)
-    #     return obj
