@@ -44,7 +44,7 @@ class PPO(Agent):
             self, state_dim, hidden_dim, action_dim, hidden_layer,
             actor_lr, critic_lr, lr_schedule, clip_grad,
             lmbda, epochs, eps, gamma, device, train=True):
-        super().__init__(device, train)
+        super().__init__(on_policy=True, device=device, train=train)
 
         self.state_dim = state_dim
         self.hidden_dim = hidden_dim

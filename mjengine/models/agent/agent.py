@@ -7,7 +7,9 @@ import torch
 
 
 class Agent(ABC):
-    def __init__(self, device: str | torch.device, train: bool = True, **kwargs):
+    def __init__(self, on_policy: bool, device: str | torch.device, train: bool = True, **kwargs):
+        self.on_policy = on_policy
+
         self.device = device
         self.train = train
 

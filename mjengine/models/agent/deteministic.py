@@ -9,7 +9,7 @@ from mjengine.models.agent import Agent
 
 class Deterministic(Agent):
     def __init__(self, game, strategy: str):
-        super().__init__("cpu", False)
+        super().__init__(on_policy=False, device="cpu", train=False)
 
         from mjengine.player import make_player
 

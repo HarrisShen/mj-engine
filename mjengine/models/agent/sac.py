@@ -15,7 +15,7 @@ from mjengine.models.agent.net import PolicyNet, QNet
 class SAC(Agent):
     def __init__(self, state_dim, hidden_dim, action_dim, actor_lr, critic_lr,
                  alpha_lr, target_entropy, tau, gamma, device, train=True):
-        super().__init__(device, train)
+        super().__init__(on_policy=False, device=device, train=train)
 
         self.state_dim = state_dim
         self.hidden_dim = hidden_dim

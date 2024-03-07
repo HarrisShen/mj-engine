@@ -12,6 +12,7 @@ from mjengine.constants import PlayerAction
 class ReplayBuffer:
     def __init__(self, capacity) -> None:
         self.buffer = deque(maxlen=capacity)
+        # self.r = random.Random()
 
     def __len__(self):
         return len(self.buffer)
@@ -24,6 +25,9 @@ class ReplayBuffer:
 
     def __iter__(self):
         yield from self.buffer
+
+    # def seed(self, sd):
+    #     self.r = random.Random(sd)
 
     def add(self, state, action, reward, next_state, done):
         self.buffer.append((state, action, reward, next_state, done))
@@ -182,7 +186,7 @@ def game_dict_to_numpy(state: dict, player: int | None = None) -> np.ndarray:
             encoded_state, [pid], encoded_hand,
             encoded_exposed, encoded_discards, [0]
         ]).astype(np.int32)
-    encoded_state = np.concatenate([encoded_state, [state["wall"]], [0], state["options"]]).astype(np.int32)
+    encoded_state = np.concatenate([encoded_state, [state["wall"]], [0], state["option"]]).astype(np.int32)
 
     # # encode game historstat
     # encoded_history = np.zeros((128, 77), dtype=np.int32)
