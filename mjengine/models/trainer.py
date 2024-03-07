@@ -1,6 +1,10 @@
 import json
 import os
+import pickle
 import random
+import shutil
+import signal
+import sys
 from datetime import datetime
 
 import numpy as np
@@ -57,11 +61,18 @@ class Trainer:
 
         self._seed = None
 
-    # def seed(self, sd):
-    #     self._seed = sd
-    #     self.env.seed(self._seed)
-    #     if self.replay_buffer is not None:
-    #         self.replay_buffer.seed(self._seed)
+        self.stopped = False
+
+        signal.signal(signal.SIGINT, lambda sig, f: self.stop())
+
+    def stop(self):
+        self.stopped = True
+
+    def _check_stop_flag(self):
+        if self.stopped:
+            print("Stop requested. Saving trainer status...")
+            self._save_bp()
+            sys.exit(0)
 
     def _train(self, step_method):
         if not os.path.isdir(self.model_dir):
@@ -70,8 +81,12 @@ class Trainer:
             f.write(",episode_return,n_action\n")
         self.return_list, self.n_action_list = [], []
         for i in range(self.n_checkpoint):
+            if self.stopped:
+                break
             with tqdm(total=int(self.n_episode / self.n_checkpoint), desc=f'Iter. {i}') as pbar:
                 for i_episode in range(int(self.n_episode / self.n_checkpoint)):
+                    if self.stopped:
+                        break
                     episode_return, episode_actions = step_method()
                     self.return_list.append(episode_return)
                     self.n_action_list.append(episode_actions)
@@ -88,13 +103,19 @@ class Trainer:
                         })
                     pbar.update(1)
                     self.episode_count += 1
-            if self.evaluate:
+            # When stopped is set to True, evaluation will be skipped
+            # while checkpoint will still be saved
+            if self.evaluate and not self.stopped:
                 eval_agent(i, self.agent, **self.eval_args)
             if i + 1 < self.n_checkpoint and self.save_checkpoint:
                 self.agent.save(self.model_dir, i + 1)
-        self.agent.save(self.model_dir)
-        if self.replay_buffer is not None:
-            self.replay_buffer.save(self.model_dir, compression="bz2")
+        if self.stopped:
+            print("Stop requested. Saving trainer status...")
+            self._save_bp()
+        else:
+            self.agent.save(self.model_dir)
+            if self.replay_buffer is not None:
+                self.replay_buffer.save(self.model_dir, compression="bz2")
         print(f'Training artifacts saved at "{os.path.abspath(self.model_dir)}"')
 
     def _train_off_policy_episode(self):
@@ -163,6 +184,27 @@ class Trainer:
         else:
             self.train_off_policy()
 
+    def _save_bp(self):
+        bp_dir = os.path.join(self.model_dir, ".bp")
+        shutil.rmtree(bp_dir, ignore_errors=True)
+        os.makedirs(bp_dir)
+        self.env.save(bp_dir)
+        self.env = None
+        self.agent.save(bp_dir)
+        self.agent = None
+        if self.replay_buffer is not None:
+            self.replay_buffer.save(bp_dir, compression="bz2")
+            self.replay_buffer = None
+        with open(os.path.join(bp_dir, "trainer.pkl"), "wb") as f:
+            pickle.dump(self, f)
+        rand_states = {
+            "random": random.getstate(),
+            "numpy": np.random.get_state(),
+            "torch": torch.get_rng_state()
+        }
+        with open(os.path.join(bp_dir, "rng_states.pkl"), "wb") as f:
+            pickle.dump(rand_states, f)
+
     @staticmethod
     def from_settings(settings, out_dir=".", save_settings=True):
         env = MahjongEnv()
@@ -210,7 +252,7 @@ class Trainer:
         if not os.path.isdir(trainer.model_dir):
             os.makedirs(trainer.model_dir)
         if save_settings:
-            with open(os.path.join(out_dir, "training_settings.json"), "w") as f:
+            with open(os.path.join(model_dir, "training_settings.json"), "w") as f:
                 json.dump(settings, f, indent=2)
         return trainer
 

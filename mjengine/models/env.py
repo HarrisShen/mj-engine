@@ -1,3 +1,6 @@
+import os
+import pickle
+
 import gymnasium as gym
 import numpy as np
 from gymnasium.spaces import Dict, Discrete, MultiBinary
@@ -93,6 +96,10 @@ class MahjongEnv(gym.Env):
     def seed(self, sd: int | None):
         self.game.set_seed(sd)
 
+    def prepare_analyzer(self, index_dir: str = "./index/"):
+        self.analyzer = Analyzer()
+        self.analyzer.prepare(index_dir)
+
     def step(self, action) -> tuple[np.ndarray, float, bool, bool, dict]:
         reward = 0
         action_code, tile = parse_action(action)
@@ -140,3 +147,15 @@ class MahjongEnv(gym.Env):
 
     def render(self):
         pass
+
+    def save(self, out_dir):
+        self.analyzer = None
+        with open(os.path.join(out_dir, "mahjong_env.pkl"), "wb") as f:
+            pickle.dump(self, f)
+
+    @staticmethod
+    def restore(dirpath):
+        with open(os.path.join(dirpath, "mahjong_env.pkl"), "rb") as f:
+            env = pickle.load(f)
+        env.prepare_analyzer()
+        return env
