@@ -10,13 +10,12 @@ from datetime import datetime
 import numpy as np
 import torch
 from gymnasium import Env
-from scipy.sparse import load_npz
+from scipy.sparse import csr_matrix, load_npz, save_npz
 from tqdm import tqdm
 
 from mjengine.game import Game
-from mjengine.models.agent import PPO, DQN, Deterministic
+from mjengine.models.agent import PPO, DQN, SAC, Deterministic
 from mjengine.models.agent.agent import Agent
-from mjengine.models.agent.sac import SAC
 from mjengine.models.env import MahjongEnv
 from mjengine.models.gail import GAIL
 from mjengine.models.utils import ReplayBuffer
@@ -24,6 +23,11 @@ from mjengine.player import make_player, Player
 from mjengine.strategy import RLAgentStrategy
 
 TRAINABLES = ["GAIL", "PPO", "SAC", "DQN"]
+AGENT_CLASS_MAP = {
+    "DQN": DQN,
+    "PPO": PPO,
+    "SAC": SAC
+}
 
 
 class Trainer:
@@ -63,6 +67,7 @@ class Trainer:
 
         self.stopped = False
 
+    def _set_stop_callback(self):
         signal.signal(signal.SIGINT, lambda sig, f: self.stop())
 
     def stop(self):
@@ -77,14 +82,19 @@ class Trainer:
     def _train(self, step_method):
         if not os.path.isdir(self.model_dir):
             os.makedirs(self.model_dir)
-        with open(os.path.join(self.model_dir, "train_output.csv"), "w") as f:
-            f.write(",episode_return,n_action\n")
-        self.return_list, self.n_action_list = [], []
-        for i in range(self.n_checkpoint):
+        if self.episode_count == 0:
+            with open(os.path.join(self.model_dir, "train_output.csv"), "w") as f:
+                f.write(",episode_return,n_action\n")
+            self.return_list, self.n_action_list = [], []
+        epi_per_cp = self.n_episode // self.n_checkpoint
+        i0, j0 = self.episode_count // epi_per_cp, self.episode_count % epi_per_cp
+        for i in range(i0, self.n_checkpoint):
             if self.stopped:
                 break
-            with tqdm(total=int(self.n_episode / self.n_checkpoint), desc=f'Iter. {i}') as pbar:
-                for i_episode in range(int(self.n_episode / self.n_checkpoint)):
+            with tqdm(total=epi_per_cp, desc=f'Iter. {i}') as pbar:
+                if j0:
+                    pbar.update(j0)
+                for j in range(j0, epi_per_cp):
                     if self.stopped:
                         break
                     episode_return, episode_actions = step_method()
@@ -92,17 +102,19 @@ class Trainer:
                     self.n_action_list.append(episode_actions)
                     with open(os.path.join(self.model_dir, "train_output.csv"), "a") as f:
                         f.write(",".join([
-                            str(self.n_episode / 10 * i + i_episode + 1),
+                            str(epi_per_cp * i + j + 1),
                             str(episode_return), str(episode_actions)]) + "\n")
-                    if (i_episode + 1) % 10 == 0:
+                    if (j + 1) % 10 == 0:
                         pbar.set_postfix({
-                            'epi': '%d' % (self.n_episode / 10 * i + i_episode + 1),
+                            'epi': '%d' % (epi_per_cp * i + j + 1),
                             'ret': '%.3f' % np.mean(self.return_list[-10:]),
                             'r/a': '%.3f' % (np.sum(self.return_list[-10:]) / np.sum(self.n_action_list[-10:])),
                             'a/e': '%.1f' % np.mean(self.n_action_list[-10:])
                         })
                     pbar.update(1)
                     self.episode_count += 1
+            j0 = 0
+
             # When stopped is set to True, evaluation will be skipped
             # while checkpoint will still be saved
             if self.evaluate and not self.stopped:
@@ -116,6 +128,12 @@ class Trainer:
             self.agent.save(self.model_dir)
             if self.replay_buffer is not None:
                 self.replay_buffer.save(self.model_dir, compression="bz2")
+            if isinstance(self.agent, Deterministic):
+                replay_buffer = self.replay_buffer
+                replay_mtx = np.array([np.concatenate((s, [a])) for s, a, _, _, _ in replay_buffer], dtype=int)
+                replay_mtx = csr_matrix(replay_mtx)
+                save_npz(os.path.join(self.model_dir, "state_action_replay.npz"), replay_mtx)
+                print(f"Saved {replay_mtx.shape[0]} state-action pairs")
         print(f'Training artifacts saved at "{os.path.abspath(self.model_dir)}"')
 
     def _train_off_policy_episode(self):
@@ -179,6 +197,7 @@ class Trainer:
         self._train(self._train_on_policy_episode)
 
     def run(self):
+        self._set_stop_callback()
         if self.agent.on_policy:
             self.train_on_policy()
         else:
@@ -200,7 +219,8 @@ class Trainer:
         rand_states = {
             "random": random.getstate(),
             "numpy": np.random.get_state(),
-            "torch": torch.get_rng_state()
+            "torch": torch.get_rng_state(),
+            "torch_cuda": torch.cuda.get_rng_state()
         }
         with open(os.path.join(bp_dir, "rng_states.pkl"), "wb") as f:
             pickle.dump(rand_states, f)
@@ -215,6 +235,7 @@ class Trainer:
         if "seed" in settings:
             seed = settings["seed"]
             torch.manual_seed(seed)
+            torch.cuda.manual_seed(seed)
             random.seed(seed)
             np.random.seed(seed)
             env.seed(seed)
@@ -244,6 +265,7 @@ class Trainer:
         naming_list.append(timestamp)
         model_name = "_".join([str(n) for n in naming_list])
         model_dir = os.path.join(out_dir, model_name)
+        # env.game.wall_file = os.path.join(model_dir, "game_walls.csv")
         trainer = Trainer(env, agent, model_dir, **settings["train_params"])
         if "seed" in settings:
             trainer._seed = settings["seed"]
@@ -254,6 +276,41 @@ class Trainer:
         if save_settings:
             with open(os.path.join(model_dir, "training_settings.json"), "w") as f:
                 json.dump(settings, f, indent=2)
+        return trainer
+
+    @staticmethod
+    def restore(model_dir):
+        bp_dir = os.path.join(model_dir, ".bp")
+        if not os.path.isdir(bp_dir):
+            raise FileNotFoundError('Break point directory ".bp" not found')
+
+        with open(os.path.join(model_dir, "training_settings.json")) as f:
+            settings = json.load(f)
+
+        env = MahjongEnv.restore(bp_dir)
+        if settings["agent"] not in AGENT_CLASS_MAP:
+            raise ValueError(f'Trainer for agent type "{settings["agent"]}" cannot be restored')
+        agent_cls = AGENT_CLASS_MAP[settings["agent"]]
+        agent = agent_cls.restore(bp_dir, device=settings["agent_params"]["device"], train=True)
+        with open(os.path.join(bp_dir, "trainer.pkl"), "rb") as f:
+            trainer = pickle.load(f)
+        trainer.env = env
+        trainer.agent = agent
+        replay_path = os.path.join(bp_dir, "replay_buffer.pkl.bz2")
+        if os.path.exists(replay_path):
+            replay_buffer = ReplayBuffer.restore(bp_dir)
+            trainer.replay_buffer = replay_buffer
+        trainer.stopped = False
+
+        with open(os.path.join(bp_dir, "rng_states.pkl"), "rb") as f:
+            rng_states = pickle.load(f)
+        random.setstate(rng_states["random"])
+        np.random.set_state(rng_states["numpy"])
+        torch.set_rng_state(rng_states["torch"])
+        torch.cuda.set_rng_state(rng_states["torch_cuda"])
+
+        shutil.rmtree(bp_dir, ignore_errors=True)
+
         return trainer
 
 

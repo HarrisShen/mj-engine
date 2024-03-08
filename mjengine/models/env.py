@@ -81,10 +81,11 @@ class MahjongEnv(gym.Env):
             self,
             game: Game | None = None,
             seed: int | None = 0,
-            index_dir: str = "./index/"):
+            index_dir: str = "./index/",
+            wall_file: str = ""):
         self.game = game
         if self.game is None:
-            self.game = Game(verbose=False)
+            self.game = Game(verbose=False, wall_file=wall_file)
         self.seed(seed)
 
         self.analyzer = Analyzer()
@@ -107,7 +108,6 @@ class MahjongEnv(gym.Env):
             tile = self.game.players[self.game.current_player].discards[-1]
         acting_player = self.game.acting_player
         player = self.game.players[acting_player]
-        # old_st, _, old_wait = self.analyzer(player.hand)
         try:
             self.game.apply_action(action_code, tile)
         except ValueError:
@@ -151,11 +151,13 @@ class MahjongEnv(gym.Env):
     def save(self, out_dir):
         self.analyzer = None
         with open(os.path.join(out_dir, "mahjong_env.pkl"), "wb") as f:
-            pickle.dump(self, f)
+            pickle.dump({"env": self, "game_rng": self.game.r.getstate()}, f)
 
     @staticmethod
     def restore(dirpath):
         with open(os.path.join(dirpath, "mahjong_env.pkl"), "rb") as f:
-            env = pickle.load(f)
+            pickled = pickle.load(f)
+        env = pickled["env"]
+        env.game.r.setstate(pickled["game_rng"])
         env.prepare_analyzer()
         return env

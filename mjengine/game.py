@@ -20,7 +20,8 @@ class Game:
             game_limit: int | None = None,
             retain_dealer: bool = False,
             seed: int | float | None = None,
-            verbose: int = 0) -> None:
+            verbose: int = 0,
+            wall_file: str = "") -> None:
         self.round_limit = round_limit
         self.game_limit = game_limit
         if self.round_limit is not None and self.game_limit is not None:
@@ -49,6 +50,8 @@ class Game:
         self.action_record = []
 
         self.r = random.Random(seed)
+
+        self.wall_file = wall_file
 
         if verbose == 2:
             logging.basicConfig(level=logging.DEBUG)
@@ -79,6 +82,10 @@ class Game:
         
         self.wall = list(range(34)) * 4
         self.r.shuffle(self.wall)
+
+        if self.wall_file:
+            with open(self.wall_file, "a") as f:
+                f.write(",".join([str(t) for t in self.wall]) + '\n')
 
         # mimic real procedure - deal 4 tiles to each player, then 1 tile to each player
         for _ in range(3):

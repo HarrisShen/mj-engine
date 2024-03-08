@@ -1,19 +1,12 @@
-import json
 import os
-import random
-from datetime import datetime
 
 import numpy as np
 import scipy as sp
 import torch
 
 from cli.inputs import numeric_input, unit_interval_input, confirm_inputs, bool_input
-from mjengine.models.agent import Deterministic, DQN, PPO
-from mjengine.models.agent.sac import SAC
-from mjengine.models.env import MahjongEnv
-from mjengine.models.gail import GAIL
-from mjengine.models.trainer import train_off_policy, train_on_policy, train_gail, Trainer
-from mjengine.models.utils import ReplayBuffer
+from mjengine.models.agent import Deterministic
+from mjengine.models.trainer import Trainer
 
 
 def setup() -> dict:
@@ -75,8 +68,15 @@ def setup_load() -> dict:
         print(f"Unsupported model type")
         exit(1)
 
+    resume = False
+    if os.path.isdir(os.path.join(model_dir, ".bp")):
+        resume = bool_input("Break point found. Resume trainer?", default=True)
+
     with open(os.path.join(model_dir, "training_settings.json"), "r") as f:
         print(f"training_settings: {f.read()}")
+    if resume:
+        return {"resume": True, "load_from": model_dir}
+
     train_settings = setup_train()
     if agent_type == "ppo":
         agent_settings = setup_ppo()
@@ -326,11 +326,11 @@ def setup_dqn() -> dict:
 
 if __name__ == "__main__":
     training_settings = setup()
-    trainer = Trainer.from_settings(training_settings, out_dir="./trained_models/")
+    if "load_from" in training_settings:
+        if training_settings.get("resume"):
+            trainer = Trainer.restore(training_settings["load_from"])
+        else:
+            raise NotImplementedError
+    else:
+        trainer = Trainer.from_settings(training_settings, out_dir="./trained_models/")
     trainer.run()
-    if isinstance(trainer.agent, Deterministic):
-        replay_buffer = trainer.replay_buffer
-        replay_mtx = np.array([np.concatenate((s, [a])) for s, a, _, _, _ in replay_buffer], dtype=int)
-        replay_mtx = sp.sparse.csr_matrix(replay_mtx)
-        sp.sparse.save_npz(os.path.join(trainer.model_dir, "state_action_replay.npz"), replay_mtx)
-        print(f"Saved {replay_mtx.shape[0]} state-action pairs")
