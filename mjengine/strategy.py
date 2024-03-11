@@ -291,12 +291,15 @@ class RLAgentStrategy(Strategy):
         return action, tile
 
     @staticmethod
-    def load(model_dir, device):
-        model_name = os.path.split(model_dir)[-1]
+    def load(model_path, device):
+        if os.path.isdir(model_path):
+            model_name = os.path.split(model_path)[1]
+        else:
+            model_name = os.path.split(os.path.split(model_path)[0])[1]
         if model_name.startswith("DQN"):
-            agent = DQN.restore(model_dir, device, train=False)
+            agent = DQN.restore(model_path, device, train=False)
         elif model_name.startswith("PPO") or model_name.startswith("GAIL_PPO"):
-            agent = PPO.restore(model_dir, device, train=False)
+            agent = PPO.restore(model_path, device, train=False)
         else:
             raise ValueError("No proper model class detected")
         return RLAgentStrategy(agent)

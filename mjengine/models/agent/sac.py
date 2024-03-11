@@ -159,5 +159,5 @@ class SAC(Agent):
         return model_dir
 
     @staticmethod
-    def restore(model_dir: str, device: torch.device, train: bool = False):
+    def restore(model_path: str, device: torch.device, train: bool = False):
         pass

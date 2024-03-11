@@ -8,7 +8,7 @@ from mjengine.player import make_player
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("players",
-                        help="Player types or model directory if using a trained model", nargs=4)
+                        help="Player types or model directory/file if using a trained model", nargs=4)
     parser.add_argument("-r", "--round", help="Round limit of the game", type=int)
     parser.add_argument("-g", "--game", help="Limit of game to be played", type=int)
     parser.add_argument("-d", "--retain-dealer", default=False, action="store_true",

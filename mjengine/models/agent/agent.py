@@ -33,15 +33,21 @@ class Agent(ABC):
     @classmethod
     def restore(
             cls,
-            model_dir: str,
+            model_path: str,
             device: str | torch.device,
             train: bool = False,
             checkpoint: int | None = None):
-        with open(os.path.join(model_dir, "model_settings.json"), "r") as f:
-            kwargs = json.load(f)
-        obj = cls(device=device, train=train, **kwargs)
-        state_file = "model_state.pt" if checkpoint is None else f"model_state_cp_{checkpoint}.pt"
-        model_state = torch.load(os.path.join(model_dir, state_file))
+        if os.path.isdir(model_path):
+            with open(os.path.join(model_path, "model_settings.json"), "r") as f:
+                kwargs = json.load(f)
+            obj = cls(device=device, train=train, **kwargs)
+            state_file = "model_state.pt" if checkpoint is None else f"model_state_cp_{checkpoint}.pt"
+            model_state = torch.load(os.path.join(model_path, state_file))
+        else:
+            with open(os.path.join(model_path, "../model_settings.json"), "r") as f:
+                kwargs = json.load(f)
+            obj = cls(device=device, train=train, **kwargs)
+            model_state = torch.load(os.path.join(model_path))
         for k, v in model_state.items():
             if isinstance(v, dict):  # restore from state dict
                 getattr(obj, k).load_state_dict(model_state[k])

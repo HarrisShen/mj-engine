@@ -52,5 +52,5 @@ class Deterministic(Agent):
         return model_dir
 
     @staticmethod
-    def restore(model_dir: str, device: torch.device, train=False):
+    def restore(model_path: str, device: torch.device, train=False):
         raise RuntimeError("Deterministic agent cannot be restored from files")

@@ -134,11 +134,11 @@ def make_player(strategy: str) -> Player:
         return Player(AnalyzerStrategy("exp0"))
     elif strategy in ["analyzer_exp1", "exp1", "e1", "e"]:
         return Player(AnalyzerStrategy("exp1"))
-    elif os.path.isdir(strategy):
+    elif os.path.exists(strategy):
         import torch
 
         device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        return Player(RLAgentStrategy.load(model_dir=strategy, device=device))
+        return Player(RLAgentStrategy.load(model_path=strategy, device=device))
 
     raise ValueError("Invalid strategy")
     

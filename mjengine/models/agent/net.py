@@ -23,15 +23,28 @@ class VANet(Module):
     """
     Source: https://hrl.boyuai.com/chapter/2/dqn%E6%94%B9%E8%BF%9B%E7%AE%97%E6%B3%95/
     """
-    def __init__(self, state_dim, hidden_dim, action_dim):
+    def __init__(self, state_dim, hidden_dim, action_dim, hidden_layer=1):
         super(VANet, self).__init__()
-        self.fc1 = torch.nn.Linear(state_dim, hidden_dim)
-        self.fc_A = torch.nn.Linear(hidden_dim, action_dim)
-        self.fc_V = torch.nn.Linear(hidden_dim, 1)
+        # self.fc1 = torch.nn.Linear(state_dim, hidden_dim)
+        # self.fc_A = torch.nn.Linear(hidden_dim, action_dim)
+        # self.fc_V = torch.nn.Linear(hidden_dim, 1)
+        self.hidden_layer = hidden_layer
+        self.layers_a = ModuleList([Linear(state_dim, hidden_dim)])
+        self.layers_a.extend([Linear(hidden_dim, hidden_dim) for _ in range(self.hidden_layer - 1)])
+        self.layers_a.append(Linear(hidden_dim, action_dim))
+        self.layers_v = ModuleList([Linear(state_dim, hidden_dim)])
+        self.layers_v.extend([Linear(hidden_dim, hidden_dim) for _ in range(self.hidden_layer - 1)])
+        self.layers_v.append(Linear(hidden_dim, 1))
 
     def forward(self, x):
-        A = self.fc_A(F.relu(self.fc1(x)))
-        V = self.fc_V(F.relu(self.fc1(x)))
+        A = x
+        for i in range(len(self.layers_a) - 1):
+            A = F.relu(self.layers_a[i](A))
+        A = self.layers_a[-1](A)
+        V = x
+        for i in range(len(self.layers_v) - 1):
+            V = F.relu(self.layers_v[i](V))
+        V = self.layers_v[-1](V)
         Q = V + A - A.mean(-1, keepdim=True)
         return Q
 
