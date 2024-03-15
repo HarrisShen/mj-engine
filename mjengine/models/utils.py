@@ -26,9 +26,6 @@ class ReplayBuffer:
     def __iter__(self):
         yield from self.buffer
 
-    # def seed(self, sd):
-    #     self.r = random.Random(sd)
-
     def add(self, state, action, reward, next_state, done):
         self.buffer.append((state, action, reward, next_state, done))
 
@@ -159,7 +156,7 @@ def find_last_discard(state: np.ndarray) -> int:
     return tile
 
 
-def game_dict_to_numpy(state: dict, player: int | None = None) -> np.ndarray:
+def game_dict_to_numpy(state: dict, player: int | None = None, history: bool = False) -> np.ndarray:
     # the state dict of game must be masked for opponents
     if player is None:
         for i in range(4):
@@ -179,21 +176,24 @@ def game_dict_to_numpy(state: dict, player: int | None = None) -> np.ndarray:
         for meld in state["players"][pid]["exposed"]:
             for tid in meld:
                 encoded_exposed[tid] += 1
-        encoded_discards = np.zeros(34, dtype=np.int32)
+        # encoded_discards = np.zeros(34, dtype=np.int32)
+        # for j, tid in enumerate(state["players"][pid]["discards"]):
+        #     encoded_discards[tid] += 1
+        encoded_discards = np.zeros(33, dtype=np.int32)
         for j, tid in enumerate(state["players"][pid]["discards"]):
-            encoded_discards[tid] += 1
+            encoded_discards[j] = tid + 1
         encoded_state = np.concatenate([
             encoded_state, [pid], encoded_hand,
-            encoded_exposed, encoded_discards, [0]
+            encoded_exposed, encoded_discards
         ]).astype(np.int32)
-    encoded_state = np.concatenate([encoded_state, [state["wall"]], [0], state["option"]]).astype(np.int32)
+    encoded_state = np.concatenate([encoded_state, [state["wall"]], state["option"]]).astype(np.int32)
 
-    # # encode game historstat
-    # encoded_history = np.zeros((128, 77), dtype=np.int32)
-    # for i, (actor, action, tile, donor) in enumerate(state["actions"]):
-    #     pid = (actor - player) % 4
-    #     action_code = encode_action(action, tile, donor)
-    #     encoded_history[i][0] = pid
-    #     encoded_history[i][action_code + 1] = 1
-    # encoded_state = np.concatenate([encoded_state, encoded_history.flatten()])
+    if history:  # encode game history stat
+        encoded_history = np.zeros((128, 78), dtype=np.int32)
+        for i, (actor, action, tile, donor) in enumerate(state["actions"]):
+            pid = (actor - player) % 4
+            action_code = encode_action(action, tile, donor)
+            encoded_history[i][0] = pid
+            encoded_history[i][action_code + 1] = 1
+        encoded_state = np.concatenate([encoded_state, encoded_history.flatten()])
     return encoded_state

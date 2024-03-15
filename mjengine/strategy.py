@@ -136,8 +136,8 @@ class AnalyzerStrategy(Strategy):
             best_cost = min(costs)
             best_discards = [tid for tid in best_discards if costs[tid] == best_cost]
         elif self.tiebreak == "exp0" or self.tiebreak == "exp1":
-            # exp0: Number of types of expected tiles
-            # exp1: Number of tiles of expected tiles, presumed
+            # exp0: Total types of expected tiles
+            # exp1: Presumed number of tiles of expected tiles
             best_discards, _ = self.analyzer.best_discard(
                 hand, None if self.tiebreak == "exp0" else info)
         return None, random.choice(best_discards)

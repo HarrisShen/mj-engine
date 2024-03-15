@@ -30,6 +30,9 @@ AGENT_CLASS_MAP = {
 }
 
 
+BEST_WINDOW = 100
+
+
 class Trainer:
     def __init__(
             self,
@@ -88,6 +91,7 @@ class Trainer:
             self.return_list, self.n_action_list = [], []
         epi_per_cp = self.n_episode // self.n_checkpoint
         i0, j0 = self.episode_count // epi_per_cp, self.episode_count % epi_per_cp
+        best_epi_return, epi_window = -1000, BEST_WINDOW
         for i in range(i0, self.n_checkpoint):
             if self.stopped:
                 break
@@ -108,15 +112,18 @@ class Trainer:
                         pbar.set_postfix({
                             'epi': '%d' % (epi_per_cp * i + j + 1),
                             'ret': '%.3f' % np.mean(self.return_list[-10:]),
-                            'r/a': '%.3f' % (np.sum(self.return_list[-10:]) / np.sum(self.n_action_list[-10:])),
                             'a/e': '%.1f' % np.mean(self.n_action_list[-10:])
                         })
+                        window_avg_ret = np.mean(self.return_list[-epi_window:])
+                        if len(self.return_list) >= epi_window and window_avg_ret > best_epi_return:
+                            self.agent.save(self.model_dir, best=True)
+                            best_epi_return = window_avg_ret
                     pbar.update(1)
                     self.episode_count += 1
             j0 = 0
 
             # When stopped is set to True, evaluation will be skipped
-            # while checkpoint will still be saved
+            # while checkpoints will still be saved
             if self.evaluate and not self.stopped:
                 eval_agent(i, self.agent, **self.eval_args)
             if i + 1 < self.n_checkpoint and self.save_checkpoint:
@@ -148,7 +155,14 @@ class Trainer:
             option = info["option"]
             state = info["next_player_state"]
             episode_return += reward
-            episode_actions += 1
+            if action < 75:  # count only non-pass actions
+                episode_actions += 1
+            # if action == 74:  # revise the reward of chucking player
+            #     for i in range(len(self.replay_buffer) - 1, -1, -1):
+            #         if self.replay_buffer[i][1] < 34:
+            #             s, a, r, ns, d = self.replay_buffer[i]
+            #             self.replay_buffer[i] = (s, a, r - 1.0, ns, d)
+            #             break
             # Train the Q network until buffer reached minimal size
             if len(self.replay_buffer) > self.minimal_size:
                 b_s, b_a, b_r, b_ns, b_d = self.replay_buffer.sample(self.batch_size)
@@ -189,7 +203,13 @@ class Trainer:
             option = info["option"]
             state = info["next_player_state"]
             episode_return += reward
-            episode_actions += 1
+            if action < 75:  # count only non-pass actions
+                episode_actions += 1
+            # if action == 74:  # revise the reward of chucking player
+            #     for i in range(len(transition_dict['states']) - 1, -1, -1):
+            #         if transition_dict['actions'][i] < 34:
+            #             transition_dict['rewards'][i] -= -1.0
+            #             break
         self.agent.update(**transition_dict)
         return episode_return, episode_actions
 
@@ -240,12 +260,12 @@ class Trainer:
             np.random.seed(seed)
             env.seed(seed)
 
-        if settings["agent"] == "DQN":
-            agent = DQN(state_dim=state_dim, action_dim=action_dim, **settings["agent_params"])
-        elif settings["agent"] == "PPO":
-            agent = PPO(state_dim=state_dim, action_dim=action_dim, **settings["agent_params"])
-        elif settings["agent"] == "SAC":
-            agent = SAC(state_dim=state_dim, action_dim=action_dim, **settings["agent_params"])
+        if settings["agent"] in AGENT_CLASS_MAP:
+            agt_cls = AGENT_CLASS_MAP[settings["agent"]]
+            if settings.get("load_from"):
+                agent = agt_cls.restore(settings["load_from"], train=True, **settings["agent_params"])
+            else:
+                agent = agt_cls(state_dim, action_dim=action_dim, **settings["agent_params"])
         else:
             agent = Deterministic(env.game, settings["agent"])
 

@@ -44,13 +44,15 @@ class Deterministic(Agent):
     def update(self, **kwargs) -> None:
         pass
 
-    def save(self, model_dir, checkpoint=None) -> str:
+    def save(self, model_dir: str, checkpoint: int | None = None, best: bool = False) -> str:
         if checkpoint is not None:
             raise ValueError("Cannot set checkpoint for deterministic agent")
-        if not os.path.isdir(model_dir):
-            os.makedirs(model_dir)
         return model_dir
 
     @staticmethod
-    def restore(model_path: str, device: torch.device, train=False):
+    def restore(
+            model_path: str,
+            device: str | torch.device,
+            train: bool = False,
+            checkpoint: int | None = None, **kwargs):
         raise RuntimeError("Deterministic agent cannot be restored from files")

@@ -27,7 +27,9 @@ if __name__ == "__main__":
         retain_dealer=args.retain_dealer,
         seed=args.seed,
         verbose=args.verbose)
-    print(f"Game ready. Time elapsed: {time.process_time() - start:.3f}s")
+    print(f"Game ready. Preparation time: {time.process_time() - start:.3f}s")
+    sim_start = time.process_time()
     game.play()
-    print(f"Game finished. Time elapsed: {time.process_time() - start:.3f}s")
+    sim_time = time.process_time() - sim_start
+    print(f"Game finished. Simulation time: {sim_time:.3f}s ({sim_time / game.games:.3f}s per game)")
     print(game.score_summary(detail=1))

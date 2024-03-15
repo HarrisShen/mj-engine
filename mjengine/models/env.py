@@ -102,7 +102,7 @@ class MahjongEnv(gym.Env):
         self.analyzer.prepare(index_dir)
 
     def step(self, action) -> tuple[np.ndarray, float, bool, bool, dict]:
-        reward = 0
+        reward = 0.0
         action_code, tile = parse_action(action)
         if action > 68 and self.game.players[self.game.current_player].discards:
             tile = self.game.players[self.game.current_player].discards[-1]
@@ -115,27 +115,32 @@ class MahjongEnv(gym.Env):
             reward = -100.0
             info = {
                 "option": self.game.option.to_numpy(),
-                "next_player_state": self.game.to_numpy()  # state in next player's perspective
+                "next_player_state": self.game.to_numpy()
+                # "action_score": -100.0
             }
             return self.game.to_numpy(), reward, False, False, info
         if self.game.status == GameStatus.END:
             if player.won:
+                # reward = 3.0 if action == 68 else 1.0
                 reward = 128.0
             return self.game.to_numpy(), reward, True, False, {
                 "option": None,
-                "next_player_state": None,
-                "chuck_tile": tile if player.won else None,
+                "next_player_state": None
+                # "chuck_tile": tile if player.won else None,
+                # "action_score": 128.0 if action == 68 or action == 74 else 0.0
             }
         new_st, _, new_wait = self.analyzer(player.hand)
         new_n_exp = sum(self.game.tiles_left(acting_player, new_wait))
         n_round = len(self.game.players[acting_player].discards)
+        # score = step_reward(new_st, new_n_exp, n_round)
         reward = step_reward(new_st, new_n_exp, n_round)
         state = self.game.to_numpy()
         self.game.get_option()
         next_player_state = self.game.to_numpy()
         info = {
             "option": self.game.option.to_numpy(),
-            "next_player_state": next_player_state
+            "next_player_state": next_player_state  # state in next player's perspective
+            # "action_score": score
         }
         return state, reward, False, False, info
 

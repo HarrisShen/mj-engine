@@ -1,5 +1,5 @@
 import torch
-from torch.nn import ModuleList, Linear, functional as F, Module
+from torch.nn import ModuleList, Linear, functional as F, Module, Conv1d, MaxPool1d
 
 
 class QNet(Module):
@@ -9,11 +9,20 @@ class QNet(Module):
     def __init__(self, state_dim, hidden_dim, action_dim, hidden_layer=1):
         super(QNet, self).__init__()
         self.hidden_layer = hidden_layer
+        # self.conv = Conv1d(state_dim, hidden_dim, kernel_size=3, padding=1)
+        # self.pool = MaxPool1d(kernel_size=3)
+        # self.layers = ModuleList([Linear(hidden_dim, hidden_dim)])
         self.layers = ModuleList([Linear(state_dim, hidden_dim)])
         self.layers.extend([Linear(hidden_dim, hidden_dim) for _ in range(self.hidden_layer - 1)])
         self.layers.append(Linear(hidden_dim, action_dim))
 
     def forward(self, x):
+        # x = self.conv(x.view(392, -1))
+        # x = F.relu(x)
+        # x = self.pool(x)
+        # x = x.view(-1, 256)
+        # if x.shape[0] == 1:
+        #     x = x.view(256)
         for i in range(len(self.layers) - 1):
             x = F.relu(self.layers[i](x))
         return self.layers[-1](x)
@@ -25,9 +34,6 @@ class VANet(Module):
     """
     def __init__(self, state_dim, hidden_dim, action_dim, hidden_layer=1):
         super(VANet, self).__init__()
-        # self.fc1 = torch.nn.Linear(state_dim, hidden_dim)
-        # self.fc_A = torch.nn.Linear(hidden_dim, action_dim)
-        # self.fc_V = torch.nn.Linear(hidden_dim, 1)
         self.hidden_layer = hidden_layer
         self.layers_a = ModuleList([Linear(state_dim, hidden_dim)])
         self.layers_a.extend([Linear(hidden_dim, hidden_dim) for _ in range(self.hidden_layer - 1)])

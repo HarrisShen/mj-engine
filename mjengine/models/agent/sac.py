@@ -152,12 +152,12 @@ class SAC(Agent):
             "critic_2_optimizer": self.critic_2_optimizer.state_dict(),
             "log_alpha": self.log_alpha,
             "log_alpha_optimizer": self.log_alpha_optimizer.state_dict(),
-            "n_episodes": self.n_episode
+            "count": self.count
         }
         filename = "model_state.pt" if checkpoint is None else f"model_state_cp_{checkpoint}.pt"
         torch.save(model_state, os.path.join(model_dir, filename))
         return model_dir
 
-    @staticmethod
-    def restore(model_path: str, device: torch.device, train: bool = False):
-        pass
+    # @staticmethod
+    # def restore(model_path: str, device: torch.device, train: bool = False):
+    #     pass

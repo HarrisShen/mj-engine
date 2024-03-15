@@ -125,7 +125,7 @@ class PPO(Agent):
 
         self.step()
 
-    def save(self, model_dir, checkpoint=None) -> str:
+    def save(self, model_dir, checkpoint=None, best=False) -> str:
         if not os.path.isdir(model_dir):
             os.makedirs(model_dir)
         settings_file = os.path.join(model_dir, "model_settings.json")
@@ -154,6 +154,11 @@ class PPO(Agent):
             "critic_scheduler": self.critic_scheduler.state_dict(),
             "count": self.count
         }
-        filename = "model_state.pt" if checkpoint is None else f"model_state_cp_{checkpoint}.pt"
+        if best:
+            filename = "model_state_best.pt"
+        elif checkpoint is None:
+            filename = "model_state.pt"
+        else:
+            filename = f"model_state_cp_{checkpoint}.pt"
         torch.save(model_state, os.path.join(model_dir, filename))
         return model_dir
