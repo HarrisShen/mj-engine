@@ -55,10 +55,10 @@ class PPO(Agent):
         self.critic_lr = critic_lr
         self.actor = PolicyNet(state_dim, hidden_dim, action_dim, hidden_layer).to(device)
         self.critic = ValueNet(state_dim, hidden_dim, hidden_layer).to(device)
-        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(),
-                                                lr=actor_lr)
-        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(),
-                                                 lr=critic_lr)
+        self.actor_optimizer = torch.optim.AdamW(self.actor.parameters(),
+                                                 lr=actor_lr)
+        self.critic_optimizer = torch.optim.AdamW(self.critic.parameters(),
+                                                  lr=critic_lr)
 
         self.lr_schedule = lr_schedule
         self.actor_scheduler = lr_scheduler.LambdaLR(self.actor_optimizer, adjust_lr)

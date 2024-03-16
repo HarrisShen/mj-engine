@@ -247,8 +247,8 @@ class Trainer:
 
     @staticmethod
     def from_settings(settings, out_dir=".", save_settings=True):
-        env = MahjongEnv()
-        state_dim = len(env.game.to_numpy())
+        env = MahjongEnv(**settings["env_params"])
+        state_dim = len(env.encode_state())
         action_dim = env.action_space.shape[0]
         print(f"State dim: {state_dim}, Action dim: {action_dim}")
 
@@ -392,131 +392,131 @@ def train_gail(
     return return_list, n_action_list
 
 
-def train_on_policy(
-        env: Env,
-        agent: Agent,
-        model_dir: str,
-        n_episode: int,
-        n_checkpoint: int,
-        save_checkpoint: bool,
-        evaluate: bool, **kwargs) -> tuple[list, list]:
-    if n_checkpoint == 0:
-        n_checkpoint = 1
-    if not os.path.isdir(model_dir):
-        os.makedirs(model_dir)
-    return_list, n_action_list = [], []
-    for i in range(n_checkpoint):
-        with tqdm(total=int(n_episode / n_checkpoint), desc=f'Iter. {i}') as pbar:
-            for i_episode in range(int(n_episode / n_checkpoint)):
-                episode_return, episode_actions = 0, 0
-                state, info = env.reset()
-                option = info["option"]
-                done = False
-                transition_dict = {"states": [], "actions": [], "next_states": [], "rewards": [], "dones": []}
-                while not done:
-                    action = agent.take_action(state, option)
-                    next_state, reward, done, _, info = env.step(action)
-                    transition_dict['states'].append(state)
-                    transition_dict['actions'].append(action)
-                    transition_dict['next_states'].append(next_state)
-                    transition_dict['rewards'].append(reward)
-                    transition_dict['dones'].append(done)
-                    option = info["option"]
-                    state = info["next_player_state"]
-                    episode_return += reward
-                    episode_actions += 1
-                return_list.append(episode_return)
-                n_action_list.append(episode_actions)
-                agent.update(**transition_dict)
-                with open(os.path.join(model_dir, "train_output.csv"), "a") as f:
-                    f.write(",".join([
-                        str(n_episode / 10 * i + i_episode + 1),
-                        str(episode_return), str(episode_actions)]) + "\n")
-                if (i_episode + 1) % 10 == 0:
-                    pbar.set_postfix({
-                        'epi': '%d' % (n_episode / 10 * i + i_episode + 1),
-                        'ret': '%.3f' % np.mean(return_list[-10:]),
-                        'r/a': '%.3f' % (np.sum(return_list[-10:]) / np.sum(n_action_list[-10:])),
-                        'a/e': '%.1f' % np.mean(n_action_list[-10:])
-                    })
-                pbar.update(1)
-        if evaluate:
-            eval_agent(i, agent, **kwargs)
-        if i + 1 < n_checkpoint and save_checkpoint:
-            agent.save(model_dir, i + 1)
-    agent.save(model_dir)
-    return return_list, n_action_list
-
-
-def train_off_policy(
-        env: Env,
-        agent: Agent,
-        replay_buffer: ReplayBuffer,
-        model_dir: str,
-        n_episode: int,
-        n_checkpoint: int,
-        save_checkpoint: bool,
-        minimal_size: int,
-        batch_size: int,
-        evaluate: bool = False, **kwargs) -> tuple[list, list]:
-    if not os.path.isdir(model_dir):
-        os.makedirs(model_dir)
-    with open(os.path.join(model_dir, "train_output.csv"), "w") as f:
-        f.write(",episode_return,n_action\n")
-    return_list, n_action_list = [], []
-    for i in range(n_checkpoint):
-        with tqdm(total=int(n_episode / n_checkpoint), desc=f'Iter. {i}') as pbar:
-            for i_episode in range(int(n_episode / n_checkpoint)):
-                episode_return, episode_actions = 0, 0
-                state, info = env.reset()
-                option = info["option"]
-                done = False
-                while not done:
-                    try:
-                        action = agent.take_action(state, option)
-                    except Exception as e:
-                        print(f"[Error] Occurred at action {episode_actions}, episode {i_episode}")
-                        raise e
-                    # acting_player = env.game.acting_player
-                    next_state, reward, done, _, info = env.step(action)
-                    # print(f"acting for player {acting_player}, action {action}, reward {reward}")
-                    replay_buffer.add(state, action, reward, next_state, done)
-                    option = info["option"]
-                    state = info["next_player_state"]
-                    episode_return += reward
-                    episode_actions += 1
-                    # Train the Q network until buffer reached minimal size
-                    if len(replay_buffer) > minimal_size:
-                        b_s, b_a, b_r, b_ns, b_d = replay_buffer.sample(batch_size)
-                        transition_dict = {
-                            "states": b_s,
-                            "actions": b_a,
-                            "next_states": b_ns,
-                            "rewards": b_r,
-                            "dones": b_d
-                        }
-                        agent.update(**transition_dict)
-                return_list.append(episode_return)
-                n_action_list.append(episode_actions)
-                with open(os.path.join(model_dir, "train_output.csv"), "a") as f:
-                    f.write(",".join([
-                        str(n_episode / 10 * i + i_episode + 1),
-                        str(episode_return), str(episode_actions)]) + "\n")
-                if (i_episode + 1) % 10 == 0:
-                    pbar.set_postfix({
-                        'epi': '%d' % (n_episode / 10 * i + i_episode + 1),
-                        'ret': '%.3f' % np.mean(return_list[-10:]),
-                        'r/a': '%.3f' % (np.sum(return_list[-10:]) / np.sum(n_action_list[-10:])),
-                        'a/e': '%.1f' % np.mean(n_action_list[-10:])
-                    })
-                pbar.update(1)
-        if evaluate:
-            eval_agent(i, agent, **kwargs)
-        if i + 1 < n_checkpoint and save_checkpoint:
-            agent.save(model_dir, i + 1)
-    agent.save(model_dir)
-    replay_buffer.save(model_dir, compression="bz2")
-    return return_list, n_action_list
+# def train_on_policy(
+#         env: Env,
+#         agent: Agent,
+#         model_dir: str,
+#         n_episode: int,
+#         n_checkpoint: int,
+#         save_checkpoint: bool,
+#         evaluate: bool, **kwargs) -> tuple[list, list]:
+#     if n_checkpoint == 0:
+#         n_checkpoint = 1
+#     if not os.path.isdir(model_dir):
+#         os.makedirs(model_dir)
+#     return_list, n_action_list = [], []
+#     for i in range(n_checkpoint):
+#         with tqdm(total=int(n_episode / n_checkpoint), desc=f'Iter. {i}') as pbar:
+#             for i_episode in range(int(n_episode / n_checkpoint)):
+#                 episode_return, episode_actions = 0, 0
+#                 state, info = env.reset()
+#                 option = info["option"]
+#                 done = False
+#                 transition_dict = {"states": [], "actions": [], "next_states": [], "rewards": [], "dones": []}
+#                 while not done:
+#                     action = agent.take_action(state, option)
+#                     next_state, reward, done, _, info = env.step(action)
+#                     transition_dict['states'].append(state)
+#                     transition_dict['actions'].append(action)
+#                     transition_dict['next_states'].append(next_state)
+#                     transition_dict['rewards'].append(reward)
+#                     transition_dict['dones'].append(done)
+#                     option = info["option"]
+#                     state = info["next_player_state"]
+#                     episode_return += reward
+#                     episode_actions += 1
+#                 return_list.append(episode_return)
+#                 n_action_list.append(episode_actions)
+#                 agent.update(**transition_dict)
+#                 with open(os.path.join(model_dir, "train_output.csv"), "a") as f:
+#                     f.write(",".join([
+#                         str(n_episode / 10 * i + i_episode + 1),
+#                         str(episode_return), str(episode_actions)]) + "\n")
+#                 if (i_episode + 1) % 10 == 0:
+#                     pbar.set_postfix({
+#                         'epi': '%d' % (n_episode / 10 * i + i_episode + 1),
+#                         'ret': '%.3f' % np.mean(return_list[-10:]),
+#                         'r/a': '%.3f' % (np.sum(return_list[-10:]) / np.sum(n_action_list[-10:])),
+#                         'a/e': '%.1f' % np.mean(n_action_list[-10:])
+#                     })
+#                 pbar.update(1)
+#         if evaluate:
+#             eval_agent(i, agent, **kwargs)
+#         if i + 1 < n_checkpoint and save_checkpoint:
+#             agent.save(model_dir, i + 1)
+#     agent.save(model_dir)
+#     return return_list, n_action_list
+#
+#
+# def train_off_policy(
+#         env: Env,
+#         agent: Agent,
+#         replay_buffer: ReplayBuffer,
+#         model_dir: str,
+#         n_episode: int,
+#         n_checkpoint: int,
+#         save_checkpoint: bool,
+#         minimal_size: int,
+#         batch_size: int,
+#         evaluate: bool = False, **kwargs) -> tuple[list, list]:
+#     if not os.path.isdir(model_dir):
+#         os.makedirs(model_dir)
+#     with open(os.path.join(model_dir, "train_output.csv"), "w") as f:
+#         f.write(",episode_return,n_action\n")
+#     return_list, n_action_list = [], []
+#     for i in range(n_checkpoint):
+#         with tqdm(total=int(n_episode / n_checkpoint), desc=f'Iter. {i}') as pbar:
+#             for i_episode in range(int(n_episode / n_checkpoint)):
+#                 episode_return, episode_actions = 0, 0
+#                 state, info = env.reset()
+#                 option = info["option"]
+#                 done = False
+#                 while not done:
+#                     try:
+#                         action = agent.take_action(state, option)
+#                     except Exception as e:
+#                         print(f"[Error] Occurred at action {episode_actions}, episode {i_episode}")
+#                         raise e
+#                     # acting_player = env.game.acting_player
+#                     next_state, reward, done, _, info = env.step(action)
+#                     # print(f"acting for player {acting_player}, action {action}, reward {reward}")
+#                     replay_buffer.add(state, action, reward, next_state, done)
+#                     option = info["option"]
+#                     state = info["next_player_state"]
+#                     episode_return += reward
+#                     episode_actions += 1
+#                     # Train the Q network until buffer reached minimal size
+#                     if len(replay_buffer) > minimal_size:
+#                         b_s, b_a, b_r, b_ns, b_d = replay_buffer.sample(batch_size)
+#                         transition_dict = {
+#                             "states": b_s,
+#                             "actions": b_a,
+#                             "next_states": b_ns,
+#                             "rewards": b_r,
+#                             "dones": b_d
+#                         }
+#                         agent.update(**transition_dict)
+#                 return_list.append(episode_return)
+#                 n_action_list.append(episode_actions)
+#                 with open(os.path.join(model_dir, "train_output.csv"), "a") as f:
+#                     f.write(",".join([
+#                         str(n_episode / 10 * i + i_episode + 1),
+#                         str(episode_return), str(episode_actions)]) + "\n")
+#                 if (i_episode + 1) % 10 == 0:
+#                     pbar.set_postfix({
+#                         'epi': '%d' % (n_episode / 10 * i + i_episode + 1),
+#                         'ret': '%.3f' % np.mean(return_list[-10:]),
+#                         'r/a': '%.3f' % (np.sum(return_list[-10:]) / np.sum(n_action_list[-10:])),
+#                         'a/e': '%.1f' % np.mean(n_action_list[-10:])
+#                     })
+#                 pbar.update(1)
+#         if evaluate:
+#             eval_agent(i, agent, **kwargs)
+#         if i + 1 < n_checkpoint and save_checkpoint:
+#             agent.save(model_dir, i + 1)
+#     agent.save(model_dir)
+#     replay_buffer.save(model_dir, compression="bz2")
+#     return return_list, n_action_list
 
 
 def eval_agent(

@@ -1,3 +1,4 @@
+import json
 import os.path
 import random
 from abc import ABC, abstractmethod
@@ -234,11 +235,16 @@ def tile_value(hand: list[int], tile: int):
 
 
 class RLAgentStrategy(Strategy):
-    def __init__(self, agent: Agent):
+    def __init__(self, agent: Agent, encoding_version: str = "latest", index_dir="./index/"):
         self.agent = agent
 
+        self.encoding_version = encoding_version
+
+        self.analyzer = Analyzer()
+        self.analyzer.prepare(index_dir)
+
     def discard(self, hand, info):
-        state = game_dict_to_numpy(info)
+        state = game_dict_to_numpy(info, analyzer=self.analyzer, version=self.encoding_version)
         option = np.zeros(76, dtype=bool)
         for i in range(34):
             option[i] = hand[i] > 0
@@ -247,7 +253,7 @@ class RLAgentStrategy(Strategy):
         return action, tile
 
     def win(self, hand: list[int], info: dict, tile: int | None = None):
-        state = game_dict_to_numpy(info)
+        state = game_dict_to_numpy(info, analyzer=self.analyzer, version=self.encoding_version)
         option = np.zeros(76, dtype=bool)
         if tile is None:
             option[68] = True
@@ -259,7 +265,7 @@ class RLAgentStrategy(Strategy):
         return action, tile
 
     def kong(self, hand: list[int], info: dict, tiles: list[int] | None):
-        state = game_dict_to_numpy(info)
+        state = game_dict_to_numpy(info, analyzer=self.analyzer, version=self.encoding_version)
         option = np.zeros(76, dtype=bool)
         if hand[tiles[0]] == 4:  # concealed kong
             for tid in tiles:
@@ -272,7 +278,7 @@ class RLAgentStrategy(Strategy):
         return action, tile if tile is not None else tiles[0]
 
     def pong(self, hand: list[int], info: dict, tile: int):
-        state = game_dict_to_numpy(info)
+        state = game_dict_to_numpy(info, analyzer=self.analyzer, version=self.encoding_version)
         option = np.zeros(76, dtype=bool)
         option[72] = True
         option[75] = True
@@ -281,7 +287,7 @@ class RLAgentStrategy(Strategy):
         return action, tile
 
     def chow(self, hand: list[int], info: dict, tile: int, option: list[bool]):
-        state = game_dict_to_numpy(info)
+        state = game_dict_to_numpy(info, analyzer=self.analyzer, version=self.encoding_version)
         option = np.zeros(76, dtype=bool)
         for i in range(1, 4):
             option[68 + i] = option[i]
@@ -293,13 +299,17 @@ class RLAgentStrategy(Strategy):
     @staticmethod
     def load(model_path, device):
         if os.path.isdir(model_path):
+            model_dir = model_path
             model_name = os.path.split(model_path)[1]
         else:
-            model_name = os.path.split(os.path.split(model_path)[0])[1]
+            model_dir = os.path.split(model_path)[0]
+            model_name = os.path.split(model_dir)[1]
         if model_name.startswith("DQN"):
             agent = DQN.restore(model_path, device, train=False)
         elif model_name.startswith("PPO") or model_name.startswith("GAIL_PPO"):
             agent = PPO.restore(model_path, device, train=False)
         else:
-            raise ValueError("No proper model class detected")
-        return RLAgentStrategy(agent)
+            raise ValueError("No supported model class detected")
+        with open(os.path.join(model_dir, "training_settings.json"), "r") as f:
+            settings = json.load(f)
+        return RLAgentStrategy(agent, encoding_version=settings["env_params"]["encoding_version"])

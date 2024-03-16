@@ -9,7 +9,7 @@ from gymnasium.spaces.utils import flatten_space
 from mjengine.analyzer import Analyzer
 from mjengine.constants import GameStatus
 from mjengine.game import Game
-from mjengine.models.utils import parse_action
+from mjengine.models.utils import parse_action, game_dict_to_numpy
 
 """
 position: 0 - 3, representing the player's position on table
@@ -81,12 +81,15 @@ class MahjongEnv(gym.Env):
             self,
             game: Game | None = None,
             seed: int | None = 0,
+            encoding_version: str = "latest",
             index_dir: str = "./index/",
             wall_file: str = ""):
         self.game = game
         if self.game is None:
             self.game = Game(verbose=False, wall_file=wall_file)
         self.seed(seed)
+
+        self.encoding_version = encoding_version
 
         self.analyzer = Analyzer()
         self.analyzer.prepare(index_dir)
@@ -100,6 +103,15 @@ class MahjongEnv(gym.Env):
     def prepare_analyzer(self, index_dir: str = "./index/"):
         self.analyzer = Analyzer()
         self.analyzer.prepare(index_dir)
+
+    def encode_state(self):
+        acting_player = self.game.acting_player
+        return game_dict_to_numpy(
+            self.game.to_dict(),
+            player=acting_player,
+            analyzer=self.analyzer,
+            version=self.encoding_version
+        )
 
     def step(self, action) -> tuple[np.ndarray, float, bool, bool, dict]:
         reward = 0.0
@@ -115,15 +127,15 @@ class MahjongEnv(gym.Env):
             reward = -100.0
             info = {
                 "option": self.game.option.to_numpy(),
-                "next_player_state": self.game.to_numpy()
+                "next_player_state": self.encode_state()
                 # "action_score": -100.0
             }
-            return self.game.to_numpy(), reward, False, False, info
+            return self.encode_state(), reward, False, False, info
         if self.game.status == GameStatus.END:
             if player.won:
                 # reward = 3.0 if action == 68 else 1.0
                 reward = 128.0
-            return self.game.to_numpy(), reward, True, False, {
+            return self.encode_state(), reward, True, False, {
                 "option": None,
                 "next_player_state": None
                 # "chuck_tile": tile if player.won else None,
@@ -134,9 +146,9 @@ class MahjongEnv(gym.Env):
         n_round = len(self.game.players[acting_player].discards)
         # score = step_reward(new_st, new_n_exp, n_round)
         reward = step_reward(new_st, new_n_exp, n_round)
-        state = self.game.to_numpy()
+        state = self.encode_state()
         self.game.get_option()
-        next_player_state = self.game.to_numpy()
+        next_player_state = self.encode_state()
         info = {
             "option": self.game.option.to_numpy(),
             "next_player_state": next_player_state  # state in next player's perspective
@@ -148,7 +160,7 @@ class MahjongEnv(gym.Env):
         self.game.reset()
         self.game.start_game()
         self.game.get_option()
-        return self.game.to_numpy(), {"option": self.game.option.to_numpy()}
+        return self.encode_state(), {"option": self.game.option.to_numpy()}
 
     def render(self):
         pass

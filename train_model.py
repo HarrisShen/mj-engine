@@ -23,6 +23,7 @@ def setup_new():
     agent_type = input("Agent/algorithm type: ").lower()
     if agent_type not in ["gail", "ppo", "sac", "dqn", "random", "random1", "analyzer", "value", "exp0", "exp1"]:
         exit(1)
+
     if agent_type not in ["gail", "ppo", "sac", "dqn"]:
         seed = numeric_input("Random seed", int, default=0)
         n_episode = numeric_input("Number of episodes", int, default=500, min_val=1)
@@ -40,6 +41,8 @@ def setup_new():
                 "batch_size": int(1e8)
             }
         }
+
+    env_settings = setup_env()
     train_settings = setup_train()
     if agent_type == "gail":
         agent_settings = setup_gail()
@@ -55,6 +58,7 @@ def setup_new():
         raise ValueError
     return confirm_inputs("Settings", {
         "agent": agent_type.upper(),
+        **env_settings,
         **train_settings,
         **agent_settings
     }, setup)
@@ -100,6 +104,15 @@ def setup_load() -> dict:
             settings[k] = v
     settings = confirm_inputs("Settings", settings, setup)
     return {**settings, "load_from": model_path}
+
+
+def setup_env() -> dict:
+    print("=" * 20 + " Environment params " + "=" * 20)
+    version = input("Game state encoding version (default 0.2.0): ")
+    if version not in ["0.1.1", "0.1.2", "0.2.0"]:
+        print("Using default value 0.2.0")
+        version = "0.2.0"
+    return {"env_params": {"encoding_version": version}}
 
 
 def setup_train() -> dict:

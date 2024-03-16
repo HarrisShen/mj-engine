@@ -4,6 +4,7 @@ from collections import deque
 
 import numpy as np
 
+from mjengine.analyzer import Analyzer
 from mjengine.constants import GameStatus, PlayerAction
 from mjengine.models.utils import game_dict_to_numpy
 from mjengine.option import Option
@@ -163,10 +164,7 @@ class Game:
 
     def get_option(self) -> None:
         """
-        Return:
-            player: the player who should make decision
-            option: the option for the player to make decision
-            tile: the tile to be acquired, or None if the player is playing their own turn
+        Updates acting player and option for the player
         """
         if self.status == GameStatus.START:
             raise ValueError("Game is not ready to play, please deal first")
@@ -397,7 +395,7 @@ class Game:
             "actions": self.action_record
         }
 
-    def to_numpy(self, as_player: int | None = None) -> np.ndarray:
+    def to_numpy(self, as_player: int | None = None, analyzer: Analyzer | None = None) -> np.ndarray:
         """
         Turn the game object into a numpy array
         Different from to_dict, this method requires to set up a player as main to mask opponents
@@ -405,4 +403,4 @@ class Game:
         """
         if as_player is None:
             as_player = self.acting_player
-        return game_dict_to_numpy(self.to_dict(), player=as_player)
+        return game_dict_to_numpy(self.to_dict(), player=as_player, analyzer=analyzer)

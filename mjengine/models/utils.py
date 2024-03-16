@@ -6,6 +6,7 @@ import random
 
 import numpy as np
 
+from mjengine.analyzer import Analyzer
 from mjengine.constants import PlayerAction
 
 
@@ -156,7 +157,17 @@ def find_last_discard(state: np.ndarray) -> int:
     return tile
 
 
-def game_dict_to_numpy(state: dict, player: int | None = None, history: bool = False) -> np.ndarray:
+LATEST_ENCODING_VERSION = "0.2.0"
+
+
+def game_dict_to_numpy(
+        state: dict,
+        player: int | None = None,
+        analyzer: Analyzer | None = None,
+        history: bool = False,
+        version: str = "latest") -> np.ndarray:
+    if version == "latest":
+        version = LATEST_ENCODING_VERSION
     # the state dict of game must be masked for opponents
     if player is None:
         for i in range(4):
@@ -166,27 +177,51 @@ def game_dict_to_numpy(state: dict, player: int | None = None, history: bool = F
         else:
             raise ValueError("Game dict is not masked, please specify 'as_player' in 'Game.to_dict()'")
     encoded_state = np.array([])
+    seen_tiles_cnt = np.zeros(34, dtype=np.int32)
     for i in range(4):
         pid = (player + i) % 4
         if i == 0:
-            encoded_hand = np.array(state["players"][player]["hand"], dtype=np.int32)
+            hand = np.array(state["players"][player]["hand"], dtype=np.int32)
+            seen_tiles_cnt = np.add(seen_tiles_cnt, hand)
         else:
-            encoded_hand = np.array([])
-        encoded_exposed = np.zeros(34, dtype=np.int32)
+            hand = np.array([])
+        exposed = np.zeros(34, dtype=np.int32)
         for meld in state["players"][pid]["exposed"]:
             for tid in meld:
-                encoded_exposed[tid] += 1
-        # encoded_discards = np.zeros(34, dtype=np.int32)
-        # for j, tid in enumerate(state["players"][pid]["discards"]):
-        #     encoded_discards[tid] += 1
-        encoded_discards = np.zeros(33, dtype=np.int32)
+                exposed[tid] += 1
+        seen_tiles_cnt = np.add(seen_tiles_cnt, exposed)
+        discards_cnt = np.zeros(34, dtype=np.int32)
         for j, tid in enumerate(state["players"][pid]["discards"]):
-            encoded_discards[j] = tid + 1
+            discards_cnt[tid] += 1
+        seen_tiles_cnt = np.add(seen_tiles_cnt, discards_cnt)
+        discards_seq = np.zeros(33, dtype=np.int32)
+        for j, tid in enumerate(state["players"][pid]["discards"]):
+            discards_seq[j] = tid + 1
+        if version == "0.1.1":
+            encoded_state = np.concatenate([
+                encoded_state, [pid], hand, exposed, discards_seq
+            ]).astype(np.int32)
+        elif version == "0.1.2":
+            encoded_state = np.concatenate([
+                encoded_state, [pid], hand, exposed, discards_cnt, [0]
+            ]).astype(np.int32)
+        elif version == "0.2.0":
+            encoded_state = np.concatenate([
+                encoded_state, [pid], hand, exposed, discards_cnt, discards_seq
+            ]).astype(np.int32)
+        else:
+            raise NotImplementedError(f"Unsupported game encoding version: {version}")
+    if version == "0.1.1":
+        encoded_state = np.concatenate([encoded_state, [state["wall"]], state["option"]]).astype(np.int32)
+    elif version == "0.1.2":
+        encoded_state = np.concatenate([encoded_state, [state["wall"], 0], state["option"]]).astype(np.int32)
+    elif version == "0.2.0":
+        if analyzer is None:
+            raise ValueError("Analyzer required for game state encoding")
+        shanten, _, waits = analyzer(state["players"][player]["hand"])
         encoded_state = np.concatenate([
-            encoded_state, [pid], encoded_hand,
-            encoded_exposed, encoded_discards
-        ]).astype(np.int32)
-    encoded_state = np.concatenate([encoded_state, [state["wall"]], state["option"]]).astype(np.int32)
+            encoded_state, [state["wall"]], seen_tiles_cnt, state["option"], waits, [shanten]]
+        ).astype(np.int32)
 
     if history:  # encode game history stat
         encoded_history = np.zeros((128, 78), dtype=np.int32)
