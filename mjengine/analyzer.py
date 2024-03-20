@@ -1,20 +1,28 @@
 import os
+import threading
 from typing import Callable
 
 from mjengine.tiles import tiles_left
 
 
-class Singleton:
-    def __new__(cls, *args, **kwargs):
-        it = cls.__dict__.get("__it__")
-        if it is not None:
-            return it
-        cls.__it__ = it = object.__new__(cls)
-        it.init(*args, **kwargs)
-        return it
+# class Singleton:
+#     def __new__(cls, *args, **kwargs):
+#         it = cls.__dict__.get("__it__")
+#         if it is not None:
+#             return it
+#         cls.__it__ = it = object.__new__(cls)
+#         it.init(*args, **kwargs)
+#         return it
+#
+#     def init(self, *args, **kwargs):
+#         pass
+class Singleton(type):
+    _instances = {}
 
-    def init(self, *args, **kwargs):
-        pass
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
+        return cls._instances[cls]
 
 
 def _read_file(target: list[list[int]], file: str, proc_func: Callable = None):
@@ -98,11 +106,40 @@ def _shift(
     return lv, lx, ly
 
 
-class Analyzer(Singleton):
+class IndexLoader(metaclass=Singleton):
+    def __init__(self):
+        self.mp1: list[list[int]] = []
+        self.mp2: list[list[int]] = []
+        self._lock = threading.Lock()
 
-    def init(self):
-        self.mp1 = []
-        self.mp2 = []
+    def get_mp1(self, i: int) -> list[int]:
+        return self.mp1[i]
+
+    def get_mp2(self, i: int) -> list[int]:
+        return self.mp2[i]
+
+    def load(self, index_dir: str = "index") -> None:
+        with self._lock:
+            if self.mp1:
+                return
+
+            def expand_index(nums: list[int]) -> list[int]:
+                assert len(nums) == 10
+                nums += [0 for _ in range(20)]
+                for i in range(10):
+                    n = nums[i]
+                    nums[i] = n & ((1 << 4) - 1)
+                    nums[i + 10] = (n >> 4) & ((1 << 9) - 1)
+                    nums[i + 20] = (n >> 13) & ((1 << 9) - 1)
+                return nums
+
+            _read_file(self.mp1, os.path.join(index_dir, "index_dw_s.txt"), expand_index)
+            _read_file(self.mp2, os.path.join(index_dir, "index_dw_h.txt"), expand_index)
+
+
+class Analyzer:
+    def __init__(self):
+        self.index_loader = IndexLoader()
         self.ret = []
 
     def __call__(self, hand: list[int]) -> tuple[int, list[bool], list[bool]]:
@@ -117,21 +154,13 @@ class Analyzer(Singleton):
         return sht, disc_bits, wait_bits
 
     def prepare(self, index_dir: str = "index") -> None:
-        if self.mp1:
-            return
+        self.index_loader.load(index_dir)
 
-        def expand_index(nums: list[int]) -> list[int]:
-            assert len(nums) == 10
-            nums += [0 for _ in range(20)]
-            for i in range(10):
-                n = nums[i]
-                nums[i] = n & ((1 << 4) - 1)
-                nums[i + 10] = (n >> 4) & ((1 << 9) - 1)
-                nums[i + 20] = (n >> 13) & ((1 << 9) - 1)
-            return nums
+    def mp1(self, i: int) -> list[int]:
+        return self.index_loader.get_mp1(i)
 
-        _read_file(self.mp1, os.path.join(index_dir, "index_dw_s.txt"), expand_index)
-        _read_file(self.mp2, os.path.join(index_dir, "index_dw_h.txt"), expand_index)
+    def mp2(self, i: int) -> list[int]:
+        return self.index_loader.get_mp2(i)
 
     def _add1(self, rhs: list[int], m: int):
         for j in range(m + 5, 4, -1):
@@ -229,12 +258,12 @@ class Analyzer(Singleton):
     def calculate(self, hand: list[int], m: int):
         def acc_func(x, y):
             return x * 5 + y
-        self.ret = self.mp2[accumulate(hand[28:], hand[27], acc_func)].copy()
+        self.ret = self.mp2(accumulate(hand[28:], hand[27], acc_func)).copy()
 
-        self._add1(self.mp1[accumulate(hand[19: 27], hand[18], acc_func)], m)
-        self._add1(self.mp1[accumulate(hand[10: 18], hand[9], acc_func)], m)
+        self._add1(self.mp1(accumulate(hand[19: 27], hand[18], acc_func)), m)
+        self._add1(self.mp1(accumulate(hand[10: 18], hand[9], acc_func)), m)
 
-        self._add2(self.mp1[accumulate(hand[1: 9], hand[0], acc_func)], m)
+        self._add2(self.mp1(accumulate(hand[1: 9], hand[0], acc_func)), m)
 
         return self.ret[m + 5], self.ret[m + 15], self.ret[m + 25]
 

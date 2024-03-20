@@ -3,6 +3,7 @@ import pickle
 
 import gymnasium as gym
 import numpy as np
+import scipy as sp
 from gymnasium.spaces import Dict, Discrete, MultiBinary
 from gymnasium.spaces.utils import flatten_space
 
@@ -69,10 +70,10 @@ MAHJONG_ACTION_SPACE = Dict({
 
 
 def step_reward(shanten_real: int, n_exp: int, n_round: int) -> float:
-    n_exp_base = min(136, 36 + 20 * (shanten_real - 1))
+    n_exp_base = min(136, 16 + 20 * shanten_real)
     low = -(2 ** (shanten_real - 4))
     coef = (1 - min(1.0, n_exp / n_exp_base)) * np.exp((n_round - 8) / 30)
-    late_pen = np.ceil(-np.log(30 - n_round) * 1.22 + 4) / 2  # (n_round // 3) / 3
+    late_pen = np.ceil(-np.log(30 - n_round) * 1.22 + 4) / 2
     return low * coef - late_pen
 
 

@@ -157,7 +157,7 @@ def find_last_discard(state: np.ndarray) -> int:
     return tile
 
 
-LATEST_ENCODING_VERSION = "0.2.0"
+LATEST_ENCODING_VERSION = "0.2.0a"
 
 
 def game_dict_to_numpy(
@@ -205,7 +205,7 @@ def game_dict_to_numpy(
             encoded_state = np.concatenate([
                 encoded_state, [pid], hand, exposed, discards_cnt, [0]
             ]).astype(np.int32)
-        elif version == "0.2.0":
+        elif version.startswith("0.2.0"):
             encoded_state = np.concatenate([
                 encoded_state, [pid], hand, exposed, discards_cnt, discards_seq
             ]).astype(np.int32)
@@ -215,10 +215,12 @@ def game_dict_to_numpy(
         encoded_state = np.concatenate([encoded_state, [state["wall"]], state["option"]]).astype(np.int32)
     elif version == "0.1.2":
         encoded_state = np.concatenate([encoded_state, [state["wall"], 0], state["option"]]).astype(np.int32)
-    elif version == "0.2.0":
+    elif version.startswith("0.2.0"):
         if analyzer is None:
             raise ValueError("Analyzer required for game state encoding")
         shanten, _, waits = analyzer(state["players"][player]["hand"])
+        if version == "0.2.0a" and shanten > 1:
+            waits = np.zeros(34, dtype=np.int32)
         encoded_state = np.concatenate([
             encoded_state, [state["wall"]], seen_tiles_cnt, state["option"], waits, [shanten]]
         ).astype(np.int32)

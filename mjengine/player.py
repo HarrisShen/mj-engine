@@ -141,4 +141,7 @@ def make_player(strategy: str) -> Player:
         return Player(RLAgentStrategy.load(model_path=strategy, device=device))
 
     raise ValueError("Invalid strategy")
-    
+
+
+def make_players(strats: list[str]) -> list[Player]:
+    return [make_player(strategy) for strategy in strats]

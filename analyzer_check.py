@@ -4,14 +4,14 @@ from mjengine.tiles import tiles_to_hand
 if __name__ == '__main__':
     n = 100_000
     samples = []
-    with open("samples/sampled_hands_13_100k_v2.txt", "r") as f:
+    with open("samples/sampled_hands_100k_v2.txt", "r") as f:
         for _ in range(n):
             tiles = [int(t) for t in f.readline().split()]
             samples.append(tiles)
 
     print(f"Testing {n} samples")
 
-    with open("samples/sampled_hands_13_100k_results_calsht_dw.txt", "r") as f:
+    with open("samples/sampled_hands_100k_results_calsht_dw.txt", "r") as f:
         results_cpp = [tuple(int(num) for num in f.readline().split()) for _ in range(n)]  # Gold standard
 
     analyzer = Analyzer()

@@ -5,6 +5,7 @@ import torch
 
 from cli.inputs import numeric_input, unit_interval_input, confirm_inputs, bool_input
 from mjengine.models.trainer import Trainer
+from mjengine.models.utils import LATEST_ENCODING_VERSION
 
 
 def setup() -> dict:
@@ -24,11 +25,14 @@ def setup_new():
     if agent_type not in ["gail", "ppo", "sac", "dqn", "random", "random1", "analyzer", "value", "exp0", "exp1"]:
         exit(1)
 
+    env_settings = setup_env()
+
     if agent_type not in ["gail", "ppo", "sac", "dqn"]:
         seed = numeric_input("Random seed", int, default=0)
         n_episode = numeric_input("Number of episodes", int, default=500, min_val=1)
         return {
             "agent": agent_type,
+            **env_settings,
             "seed": seed,
             "train_params": {
                 "n_episode": n_episode,
@@ -42,7 +46,6 @@ def setup_new():
             }
         }
 
-    env_settings = setup_env()
     train_settings = setup_train()
     if agent_type == "gail":
         agent_settings = setup_gail()
@@ -88,6 +91,7 @@ def setup_load() -> dict:
     if resume:
         return {"resume": True, "load_from": model_dir}
 
+    env_settings = {"env_params": prev_settings["env_params"]}
     train_settings = setup_train()
     if agent_type == "ppo":
         agent_settings = setup_ppo(load_settings=prev_settings)
@@ -95,6 +99,7 @@ def setup_load() -> dict:
         agent_settings = setup_dqn(load_settings=prev_settings)
     settings = {
         "agent": model_name.split("_")[0],
+        **env_settings,
         **train_settings
     }
     for k, v in agent_settings.items():
@@ -108,10 +113,10 @@ def setup_load() -> dict:
 
 def setup_env() -> dict:
     print("=" * 20 + " Environment params " + "=" * 20)
-    version = input("Game state encoding version (default 0.2.0): ")
-    if version not in ["0.1.1", "0.1.2", "0.2.0"]:
-        print("Using default value 0.2.0")
-        version = "0.2.0"
+    version = input(f"Game state encoding version (default {LATEST_ENCODING_VERSION}): ")
+    if version not in ["0.1.1", "0.1.2", "0.2.0", "0.2.0a"]:
+        print(f"Using default value {LATEST_ENCODING_VERSION}")
+        version = LATEST_ENCODING_VERSION
     return {"env_params": {"encoding_version": version}}
 
 
