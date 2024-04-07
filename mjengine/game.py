@@ -15,8 +15,8 @@ from mjengine.utils import can_chow, can_kong, can_pong, is_winning
 
 class Game:
     def __init__(
-            self, 
-            players: list[Player] | None = None, 
+            self,
+            players: list[Player] | None = None,
             round_limit: int | None = None,
             game_limit: int | None = None,
             retain_dealer: bool = False,
@@ -80,7 +80,7 @@ class Game:
     def start_game(self) -> None:
         if self.status != GameStatus.START:
             raise ValueError("Game is not ready to deal")
-        
+
         self.wall = list(range(34)) * 4
         self.r.shuffle(self.wall)
 
@@ -122,6 +122,7 @@ class Game:
     and whether the action can be applied to the game, since other players may have made
     decisions that have the same or higher priority - e.g. multiple players can win by chuck.
     """
+
     def play(self, rounds: int | None = None, games: int | None = None) -> None:
         if rounds is not None and games is not None:
             raise ValueError("Cannot set rounds and games at same time")
@@ -168,13 +169,14 @@ class Game:
         """
         if self.status == GameStatus.START:
             raise ValueError("Game is not ready to play, please deal first")
-        
+
         # draw a tile and check winning
         if self.status == GameStatus.DRAW:
             last_draw = self.deal(self.current_player, 1)[0]
-            logging.debug(f"Player {self.current_player} draws {tid_to_unicode(last_draw)} " 
+            logging.debug(f"Player {self.current_player} draws {tid_to_unicode(last_draw)} "
                           f"(Tiles in wall - {len(self.wall)})")
             logging.debug(f"Player {self.current_player}: {self.players[self.current_player].hand_to_str()}")
+            # TODO: consider "added" kong, also apply_action need update accordingly
             hand = self.players[self.current_player].hand
             kong_tiles = [tid for tid in range(len(hand)) if hand[tid] == 4]
             if not self.wall:  # unable to kong if no tile to draw
@@ -239,7 +241,7 @@ class Game:
                 return
             self.status = GameStatus.CHECK
             return
-        
+
         hand = self.players[player].hand
         if action == PlayerAction.WIN:
             if not is_winning(hand) and not is_winning(hand, tile):
@@ -275,28 +277,32 @@ class Game:
                 logging.info(f"Player {i}: {self.players[i].hand_to_str()}")
             self.status = GameStatus.END
             return
-        
+
         if action == PlayerAction.KONG:
-            self.players[acting_players[0]].kong(tile)
+            self.players[acting_players[0]].kong(tile, self.current_player,
+                                                 None if self.current_player == self.acting_player else
+                                                 len(self.players[self.current_player].discards) - 1)
             logging.debug(f"Player {acting_players[0]} kongs!")
             self.current_player = acting_players[0]
             self.status = GameStatus.DRAW
             return
-        
+
         if action == PlayerAction.PONG:
-            self.players[acting_players[0]].pong(tile)
+            self.players[acting_players[0]].pong(tile, self.current_player,
+                                                 len(self.players[self.current_player].discards) - 1)
             logging.debug(f"Player {acting_players[0]} pongs!")
             self.current_player = acting_players[0]
             self.status = GameStatus.DISCARD
             return
-        
+
         if action > PlayerAction.PASS:  # chow
-            self.players[acting_players[0]].chow(tile, action)
+            self.players[acting_players[0]].chow(tile, action, self.current_player,
+                                                 len(self.players[self.current_player].discards) - 1)
             logging.debug(f"Player {acting_players[0]} chows!")
             self.current_player = acting_players[0]
             self.status = GameStatus.DISCARD
             return
-        
+
         if action == PlayerAction.PASS:
             # all pass after check
             if self.status == GameStatus.CHECK:
@@ -314,7 +320,7 @@ class Game:
         # no one wins
         if all([not self.players[i].won for i in range(4)]):
             return
-        
+
         # win by self-draw
         if self.players[self.current_player].won:
             self.players[self.current_player].wins += 1
@@ -325,7 +331,7 @@ class Game:
                 self.players[i].score -= 1
             self.players[self.current_player].score += 3
             return
-        
+
         # win by chuck
         self.players[self.current_player].chucks += 1
         for i in range(4):
@@ -340,7 +346,7 @@ class Game:
         if detail == 0:
             report = f"\nP\tS\tW\tSW\tC\n"
             for i in range(4):
-                report += f"{i}\t{self.players[i].score}\t{self.players[i].wins}\t"\
+                report += f"{i}\t{self.players[i].score}\t{self.players[i].wins}\t" \
                           f"{self.players[i].self_wins}\t{self.players[i].chucks}\n"
             return report
         if detail == 1:
@@ -349,9 +355,9 @@ class Game:
                 self_win_rate = 0
                 if self.players[i].wins:
                     self_win_rate = self.players[i].self_wins / self.players[i].wins
-                report += f"{i}\t{self.players[i].score}\t{self.players[i].wins}\t"\
-                          f"{self.players[i].self_wins}\t{self.players[i].chucks}\t"\
-                          f"{self.players[i].score / self.games:.4f}\t"\
+                report += f"{i}\t{self.players[i].score}\t{self.players[i].wins}\t" \
+                          f"{self.players[i].self_wins}\t{self.players[i].chucks}\t" \
+                          f"{self.players[i].score / self.games:.4f}\t" \
                           f"{self.players[i].wins / self.games * 100:.3f}\t" \
                           f"{self_win_rate * 100:.3f}\t" \
                           f"{self.players[i].chucks / self.games * 100:.3f}\n"
@@ -371,7 +377,7 @@ class Game:
         if mask is None:
             return tiles
         return [cnt if bv else 0 for cnt, bv in zip(tiles, mask)]
-            
+
     def to_dict(self, as_player: int | str | None = None) -> dict:
         """Return a dict representation of the game.
         """
@@ -389,7 +395,7 @@ class Game:
             "status": self.status,
             "current_player": self.current_player,
             "acting_player": self.acting_player,
-            "players": [p.to_dict(hide_hand=(as_player is not None and i != as_player)) 
+            "players": [p.to_dict(hide_hand=(as_player is not None and i != as_player))
                         for i, p in enumerate(self.players)],
             "option": self.option.to_numpy(),
             "actions": self.action_record

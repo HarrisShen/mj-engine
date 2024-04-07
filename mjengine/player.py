@@ -14,6 +14,7 @@ class Player:
         self.hand = [0 for _ in range(34)]
         self.discards = []
         self.exposed = []
+        self.exp_detail = []
         self.won = False
         self.strategy = strategy
 
@@ -68,33 +69,39 @@ class Player:
     def is_winning(self) -> bool:
         return is_winning(self.hand)
     
-    def chow(self, tile: int, mode: int) -> None:
+    def chow(self, tile: int, mode: int, donor: int, discard_idx: int) -> None:
         if mode == PlayerAction.CHOW1:
             self.hand[tile - 1] -= 1
             self.hand[tile - 2] -= 1
-            self.exposed.append([tile - 2, tile - 1])
+            self.exposed.append((tile - 2, tile - 1))
+            self.exp_detail.append((mode, tile, donor, discard_idx))
         elif mode == PlayerAction.CHOW2:
             self.hand[tile - 1] -= 1
             self.hand[tile + 1] -= 1
-            self.exposed.append([tile - 1, tile + 1])
+            self.exposed.append((tile - 1, tile + 1))
+            self.exp_detail.append((mode, tile, donor, discard_idx))
         elif mode == PlayerAction.CHOW3:
             self.hand[tile + 1] -= 1
             self.hand[tile + 2] -= 1
-            self.exposed.append([tile + 1, tile + 2])
+            self.exposed.append((tile + 1, tile + 2))
+            self.exp_detail.append((mode, tile, donor, discard_idx))
     
-    def pong(self, tile: int) -> None:
+    def pong(self, tile: int, donor: int, discard_idx: int) -> None:
         self.hand[tile] -= 2
-        self.exposed.append([tile, tile])
+        self.exposed.append((tile, tile))
+        self.exp_detail.append((PlayerAction.PONG, tile, donor, discard_idx))
     
-    def kong(self, tile: int) -> None:
-        self.exposed.append([tile for _ in range(self.hand[tile])])
+    def kong(self, tile: int, donor: int, discard_idx: int | None) -> None:
+        self.exposed.append(tuple(tile for _ in range(self.hand[tile])))
         self.hand[tile] = 0
+        self.exp_detail.append((PlayerAction.KONG, tile, donor, discard_idx))
 
     def to_dict(self, hide_hand=False) -> dict:
         return {
             "hand": [0 for _ in range(len(self.hand))] if hide_hand else self.hand,
             "discards": self.discards,
             "exposed": self.exposed,
+            "exposed_info": self.exp_detail,
             "won": self.won,
             "score": self.score,
             "wins": self.wins,

@@ -1,72 +1,7 @@
-import bz2
-import os
-import pickle
-from collections import deque
-import random
-
 import numpy as np
 
 from mjengine.analyzer import Analyzer
 from mjengine.constants import PlayerAction
-
-
-class ReplayBuffer:
-    def __init__(self, capacity) -> None:
-        self.buffer = deque(maxlen=capacity)
-        # self.r = random.Random()
-
-    def __len__(self):
-        return len(self.buffer)
-
-    def __getitem__(self, item):
-        return self.buffer[item]
-
-    def __setitem__(self, key, value):
-        self.buffer[key] = value
-
-    def __iter__(self):
-        yield from self.buffer
-
-    def add(self, state, action, reward, next_state, done):
-        self.buffer.append((state, action, reward, next_state, done))
-
-    def extend(self, states, actions, rewards, next_states, dones):
-        for s, a, r, ns, d in zip(states, actions, rewards, next_states, dones):
-            self.buffer.append((s, a, r, ns, d))
-
-    def sample(self, batch_size):
-        transitions = random.sample(self.buffer, batch_size)
-        state, action, reward, next_state, done = zip(*transitions)
-        return np.array(state), action, reward, np.array(next_state), done
-
-    def last_n(self, n):
-        return [self.buffer[-(n - i)] for i in range(n)]
-
-    def save(self, model_dir, compression=None):
-        filepath = os.path.join(model_dir, "replay_buffer.pkl")
-        if compression is None:
-            with open(filepath, "wb") as f:
-                pickle.dump(self, f)
-            return
-        if compression == "bz2":
-            with bz2.open(filepath + ".bz2", "wb", compresslevel=9) as f:
-                data = pickle.dumps(self)
-                f.write(data)
-            return
-        raise ValueError(f"Unsupported compression method: {compression}")
-
-    @staticmethod
-    def restore(model_dir):
-        filepath = os.path.join(model_dir, "replay_buffer.pkl")
-        if os.path.isfile(filepath):
-            with open(filepath, "rb") as f:
-                rb = pickle.load(f)
-            return rb
-        if os.path.isfile(filepath + ".bz2"):
-            with bz2.open(filepath + ".bz2", "rb", compresslevel=9) as f:
-                rb = pickle.load(f)
-            return rb
-        raise FileNotFoundError(f"File of replay buffer not found in {model_dir}")
 
 
 def game_numpy_to_dict(state: np.ndarray) -> dict:
@@ -168,7 +103,6 @@ def game_dict_to_numpy(
         state: dict,
         player: int | None = None,
         analyzer: Analyzer | None = None,
-        history: bool = False,
         version: str = "latest") -> np.ndarray:
     if version == "latest":
         version = LATEST_ENCODING_VERSION
@@ -180,27 +114,55 @@ def game_dict_to_numpy(
                 break
         else:
             raise ValueError("Game dict is not masked, please specify 'as_player' in 'Game.to_dict()'")
-    encoded_state = np.array([])
+    encoded_state = np.array([], dtype=np.int32)
+    if version == "1.0.0":
+        encoded_state.resize((0, 34))
     seen_tiles_cnt = np.zeros(34, dtype=np.int32)
     for i in range(4):
         pid = (player + i) % 4
+
         if i == 0:
             hand = np.array(state["players"][player]["hand"], dtype=np.int32)
             seen_tiles_cnt = np.add(seen_tiles_cnt, hand)
         else:
-            hand = np.array([])
-        exposed = np.zeros(34, dtype=np.int32)
-        for meld in state["players"][pid]["exposed"]:
-            for tid in meld:
-                exposed[tid] += 1
-        seen_tiles_cnt = np.add(seen_tiles_cnt, exposed)
+            hand = np.array([]) if version != "1.0.0" else np.zeros(34, dtype=np.int32)
+
+        if version == "1.0.0":
+            exposed = []
+            for j in range(4):
+                exp_item = [[0 for _1 in range(34)] for _2 in range(3)]
+                if j < len(state["players"][pid]["exposed"]):
+                    meld, detail = state["players"][pid]["exposed"][j], state["players"][pid]["exposed_info"][j]
+                    for tid in meld:
+                        exp_item[0][tid] += 1
+                        seen_tiles_cnt[tid] += 1
+                    _, ext_tile, donor, _ = detail
+                    if donor != pid:
+                        exp_item[1][ext_tile] += 1
+                    exp_item[2][donor] += 1
+                exposed.extend(exp_item)
+            exposed = np.array(exposed, dtype=np.int32)
+        else:
+            exposed = np.zeros(34, dtype=np.int32)
+            for meld in state["players"][pid]["exposed"]:
+                for tid in meld:
+                    exposed[tid] += 1
+            seen_tiles_cnt = np.add(seen_tiles_cnt, exposed)
+
         discards_cnt = np.zeros(34, dtype=np.int32)
         for j, tid in enumerate(state["players"][pid]["discards"]):
             discards_cnt[tid] += 1
         seen_tiles_cnt = np.add(seen_tiles_cnt, discards_cnt)
-        discards_seq = np.zeros(33, dtype=np.int32)
-        for j, tid in enumerate(state["players"][pid]["discards"]):
-            discards_seq[j] = tid + 1
+
+        if version == "1.0.0":
+            discards_seq = np.zeros((3 * 33, 34), dtype=np.int32)
+            for j, tid in enumerate(state["players"][pid]["discards"]):
+                discards_seq[j * 3][tid] += 1
+        else:
+            discards_seq = np.zeros(33, dtype=np.int32)
+            for j, tid in enumerate(state["players"][pid]["discards"]):
+                discards_seq[j] = tid + 1
+
         if version == "0.1.1":
             encoded_state = np.concatenate([
                 encoded_state, [pid], hand, exposed, discards_seq
@@ -213,8 +175,14 @@ def game_dict_to_numpy(
             encoded_state = np.concatenate([
                 encoded_state, [pid], hand, exposed, discards_cnt, discards_seq
             ]).astype(np.int32)
+        elif version == "1.0.0":
+            encoded_state = np.vstack((
+                encoded_state, [encode_one_hot(pid, 0, 34)],
+                [hand], exposed, [discards_cnt], discards_seq
+            ), dtype=np.int32)
         else:
             raise NotImplementedError(f"Unsupported game encoding version: {version}")
+
     if version == "0.1.1":
         encoded_state = np.concatenate([encoded_state, [state["wall"]], state["option"]]).astype(np.int32)
     elif version == "0.1.2":
@@ -228,13 +196,33 @@ def game_dict_to_numpy(
         encoded_state = np.concatenate([
             encoded_state, [state["wall"]], seen_tiles_cnt, state["option"], waits, [shanten]]
         ).astype(np.int32)
+    elif version == "1.0.0":
+        if analyzer is None:
+            raise ValueError("Analyzer required for game state encoding")
+        shanten, _, waits = analyzer(state["players"][player]["hand"])
+        if shanten > 1:
+            waits = np.zeros(34, dtype=np.int32)
+        encoded_state = np.vstack((
+            encoded_state, np.array([[state["wall"]] + [0 for _ in range(33)]], dtype=np.int32),
+            [seen_tiles_cnt], np.resize(state["option"], (3, 34)).astype(np.int32),
+            [encode_one_hot(shanten, 0, 34)], [waits]
+        ), dtype=np.int32)
 
-    if history:  # encode game history stat
-        encoded_history = np.zeros((128, 78), dtype=np.int32)
-        for i, (actor, action, tile, donor) in enumerate(state["actions"]):
-            pid = (actor - player) % 4
-            action_code = encode_action(action, tile, donor)
-            encoded_history[i][0] = pid
-            encoded_history[i][action_code + 1] = 1
-        encoded_state = np.concatenate([encoded_state, encoded_history.flatten()])
+    # link exposed actions with discarded tiles
+    if version == "1.0.0":
+        for i in range(4):
+            pid = (player + i) % 4
+            for action_mode, tile, donor, disc_idx in state["players"][pid]["exposed_info"]:
+                if disc_idx is None:
+                    continue
+                donor_disc_row0 = ((donor - player) % 4) * 114 + 15
+                encoded_state[donor_disc_row0 + disc_idx * 3 + 1][pid] = 1
+                encoded_state[donor_disc_row0 + disc_idx * 3 + 2][int(action_mode)] = 1
+
     return encoded_state
+
+
+def encode_one_hot(value, start, size):
+    encoded = np.zeros(size, dtype=np.int32)
+    encoded[value - start] = 1
+    return encoded

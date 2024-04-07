@@ -18,7 +18,7 @@ from mjengine.models.agent import PPO, DQN, SAC, Deterministic
 from mjengine.models.agent.agent import Agent
 from mjengine.models.env import MahjongEnv
 from mjengine.models.gail import GAIL
-from mjengine.models.utils import ReplayBuffer
+from mjengine.models.replay import ReplayBuffer
 from mjengine.player import make_player, Player
 from mjengine.strategy import RLAgentStrategy
 
