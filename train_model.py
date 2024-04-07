@@ -249,8 +249,10 @@ def setup_dqn(load_settings: dict | None = None) -> dict:
         print(f"Number of hidden layer: {hidden_layer}")
     lr = unit_interval_input("Learning rate", default=1e-4)
     gamma = unit_interval_input("Gamma", default=0.98)
-    epsilon = unit_interval_input("Epsilon", default=0.05)
-    target_update = numeric_input("Target update", int, default=10, min_val=1)
+    eps_start = unit_interval_input("Epsilon at start", default=0.99)
+    eps_end = unit_interval_input("Final Epsilon", default=0.05)
+    eps_decay = numeric_input("Steps for Epsilon decay", int, default=1000)
+    target_update = numeric_input("Target update", int, default=10_000, min_val=1)
     buffer_cap = numeric_input("Buffer capacity", int, default=100_000, min_val=1)
     minimal_size = numeric_input("Minimal size", int, default=500, min_val=1)
     batch_size = numeric_input("Batch size", int, default=64, min_val=1)
@@ -271,7 +273,9 @@ def setup_dqn(load_settings: dict | None = None) -> dict:
             "hidden_layer": hidden_layer,
             "lr": lr,
             "gamma": gamma,
-            "epsilon": epsilon,
+            "eps_start": eps_start,
+            "eps_end": eps_end,
+            "eps_decay": eps_decay,
             "target_update": target_update,
             "device": device
         }

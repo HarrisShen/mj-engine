@@ -127,33 +127,35 @@ class MahjongEnv(gym.Env):
             print(f"Invalid action {action} noted")
             reward = -100.0
             info = {
+                "acting_player": acting_player,
                 "option": self.game.option.to_numpy(),
                 "next_player_state": self.encode_state()
-                # "action_score": -100.0
             }
             return self.encode_state(), reward, False, False, info
         if self.game.status == GameStatus.END:
-            if player.won:
-                # reward = 3.0 if action == 68 else 1.0
-                reward = 128.0
+            # if player.won:
+            #     reward = 128.0
+            if not player.won:
+                new_st, _, new_wait = self.analyzer(player.hand)
+                new_n_exp = sum(self.game.tiles_left(acting_player, new_wait))
+                n_round = len(self.game.players[acting_player].discards)
+                reward = step_reward(new_st, new_n_exp, n_round)
             return self.encode_state(), reward, True, False, {
+                "acting_player": acting_player,
                 "option": None,
                 "next_player_state": None
-                # "chuck_tile": tile if player.won else None,
-                # "action_score": 128.0 if action == 68 or action == 74 else 0.0
             }
         new_st, _, new_wait = self.analyzer(player.hand)
         new_n_exp = sum(self.game.tiles_left(acting_player, new_wait))
         n_round = len(self.game.players[acting_player].discards)
-        # score = step_reward(new_st, new_n_exp, n_round)
         reward = step_reward(new_st, new_n_exp, n_round)
         state = self.encode_state()
         self.game.get_option()
         next_player_state = self.encode_state()
         info = {
+            "acting_player": acting_player,
             "option": self.game.option.to_numpy(),
             "next_player_state": next_player_state  # state in next player's perspective
-            # "action_score": score
         }
         return state, reward, False, False, info
 

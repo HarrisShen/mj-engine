@@ -4,7 +4,6 @@ import os
 import numpy as np
 import torch
 from torch.nn import functional as F
-from torch.optim import Adam
 
 from mjengine.models.agent import Agent
 from mjengine.models.agent.net import QNet, VANet
@@ -15,7 +14,7 @@ DQN_ALGORITHMS = ["DQN", "DoubleDQN", "DuelingDQN"]
 class DQN(Agent):
     def __init__(
             self, state_dim, hidden_dim, action_dim, hidden_layer,
-            lr, gamma, epsilon, target_update, device,
+            lr, gamma, eps_start, eps_end, eps_decay, target_update, device,
             algorithm="DQN", train=True):
         super().__init__(on_policy=False, device=device, train=train)
 
@@ -40,13 +39,21 @@ class DQN(Agent):
             self.target_q_net.to(device)
 
         self.lr = lr
-        self.optimizer = Adam(self.q_net.parameters(), lr=lr)
+        self.optimizer = torch.optim.AdamW(self.q_net.parameters(), lr=lr)
         self.gamma = gamma
-        self.epsilon = epsilon
+        self.eps_start = eps_start
+        self.eps_end = eps_end
+        self.eps_decay = eps_decay
         self.target_update = target_update
 
+    def epsilon(self):
+        """Get Epsilon at current step count
+        Epsilon follows linear decay: Eps_n = max(Eps_e, (Eps_s * (1 - n / decay))
+        """
+        return max(self.eps_end, self.eps_start * (1 - self.count / self.eps_decay))
+
     def take_action(self, state: np.ndarray, option: np.ndarray) -> int:
-        if self.train and np.random.random() < self.epsilon:
+        if self.train and np.random.random() < self.epsilon():
             action = int(np.random.choice(np.arange(0, 76, dtype=int)[option], size=1))
         else:
             state = torch.from_numpy(state.astype(np.float32)).to(self.device)
@@ -88,7 +95,7 @@ class DQN(Agent):
 
         self.step()
 
-    def save(self, model_dir, checkpoint=None) -> str:
+    def save(self, model_dir, checkpoint=None, best=False) -> str:
         if not os.path.isdir(model_dir):
             os.makedirs(model_dir)
         settings_file = os.path.join(model_dir, "model_settings.json")
@@ -101,7 +108,9 @@ class DQN(Agent):
                     "hidden_layer": self.hidden_layer,
                     "lr": self.lr,
                     "gamma": self.gamma,
-                    "epsilon": self.epsilon,
+                    "eps_start": self.eps_start,
+                    "eps_end": self.eps_end,
+                    "eps_decay": self.eps_decay,
                     "target_update": self.target_update,
                     "algorithm": self.algorithm
                 }, outf, indent=2)
@@ -111,6 +120,11 @@ class DQN(Agent):
             "optimizer": self.optimizer.state_dict(),
             "count": self.count
         }
-        filename = "model_state.pt" if checkpoint is None else f"model_state_cp_{checkpoint}.pt"
+        if best:
+            filename = "model_state_best.pt"
+        elif checkpoint is None:
+            filename = "model_state.pt"
+        else:
+            filename = f"model_state_cp_{checkpoint}.pt"
         torch.save(model_state, os.path.join(model_dir, filename))
         return model_dir

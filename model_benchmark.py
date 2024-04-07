@@ -20,6 +20,7 @@ def run_games(opponent, model, seed):
     with tqdm(total=1024, desc=f"Against {opponent}") as pbar:
         while not game.is_finished():
             game.play(rounds=1)
+            pbar.set_postfix({"s/g": f"{game.players[3].score / game.games:.4f}"})
             pbar.update(1)
     return opponent, game
 
@@ -30,7 +31,7 @@ if __name__ == "__main__":
     parser.add_argument("-l", "--level",
                         help="Highest level of tested components, order - r, r1, a, v, e0, e1",
                         type=int, choices=list(range(1, 7)), default=6)
-    parser.add_argument("-s", "--seed", help="Random seed used for game")
+    parser.add_argument("-s", "--seed", help="Random seed used for game", default=0)
     args = parser.parse_args()
 
     opponents = ["random", "random1", "analyzer", "value", "exp0", "exp1"]

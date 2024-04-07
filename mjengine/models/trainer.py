@@ -148,15 +148,48 @@ class Trainer:
         state, info = self.env.reset()
         option = info["option"]
         done = False
+        transition_dict = {"states": [], "actions": [], "next_states": [], "rewards": [], "dones": []}
+        acting_list = []
         while not done:
             action = self.agent.take_action(state, option)
             next_state, reward, done, _, info = self.env.step(action)
-            self.replay_buffer.add(state, action, reward, next_state, done)
+            transition_dict['states'].append(state)
+            transition_dict['actions'].append(action)
+            transition_dict['next_states'].append(next_state)
+            transition_dict['rewards'].append(reward)
+            transition_dict['dones'].append(done)
+            acting_list.append(info["acting_player"])
+            # self.replay_buffer.add(state, action, reward, next_state, done)
             option = info["option"]
             state = info["next_player_state"]
             episode_return += reward
             if action < 75:  # count only non-pass actions
                 episode_actions += 1
+            if action == 74:
+                winner, loser = acting_list[-1], -1
+                for i in range(len(acting_list) - 1, -1, -1):
+                    if transition_dict['actions'][i] < 34:
+                        loser = acting_list[i]
+                        break
+                if loser == -1:
+                    raise ValueError
+                wc, lc = 0, 0
+                for i in range(len(acting_list) - 1, -1, -1):
+                    if acting_list[i] == winner:
+                        transition_dict['rewards'][i] += 128 * (0.5 ** wc)
+                        wc += 1
+                    elif acting_list[i] == loser:
+                        transition_dict['rewards'][i] -= 128 * (0.5 ** lc)
+                        lc += 1
+            if action == 68:
+                winner = acting_list[-1]
+                counts = [0, 0, 0, 0]
+                for i in range(len(acting_list) - 1, -1, -1):
+                    if acting_list[i] == winner:
+                        transition_dict['rewards'][i] += 3 * 128 * (0.5 ** counts[winner])
+                    else:
+                        transition_dict['rewards'][i] -= 128 * (0.5 ** counts[acting_list[i]])
+                    counts[acting_list[i]] += 1
             # if action == 74:  # revise the reward of chucking player
             #     for i in range(len(self.replay_buffer) - 1, -1, -1):
             #         if self.replay_buffer[i][1] < 34:
@@ -166,14 +199,15 @@ class Trainer:
             # Train the Q network until buffer reached minimal size
             if len(self.replay_buffer) > self.minimal_size:
                 b_s, b_a, b_r, b_ns, b_d = self.replay_buffer.sample(self.batch_size)
-                transition_dict = {
+                batch_transitions = {
                     "states": b_s,
                     "actions": b_a,
                     "next_states": b_ns,
                     "rewards": b_r,
                     "dones": b_d
                 }
-                self.agent.update(**transition_dict)
+                self.agent.update(**batch_transitions)
+        self.replay_buffer.extend(**transition_dict)
         return episode_return, episode_actions
 
     def prepare_off_policy(self, buffer_cap, minimal_size, batch_size):
@@ -191,7 +225,8 @@ class Trainer:
         state, info = self.env.reset()
         option = info["option"]
         done = False
-        transition_dict = {"states": [], "actions": [], "next_states": [], "rewards": [], "dones": []}
+        transition_dict = {"states": [], "actions": [], "next_states": [], "rewards": [], "dones": [], "options": []}
+        acting_list = []
         while not done:
             action = self.agent.take_action(state, option)
             next_state, reward, done, _, info = self.env.step(action)
@@ -200,11 +235,38 @@ class Trainer:
             transition_dict['next_states'].append(next_state)
             transition_dict['rewards'].append(reward)
             transition_dict['dones'].append(done)
+            transition_dict['options'].append(option)
+            acting_list.append(info["acting_player"])
             option = info["option"]
             state = info["next_player_state"]
             episode_return += reward
             if action < 75:  # count only non-pass actions
                 episode_actions += 1
+            if action == 74:
+                winner, loser = acting_list[-1], -1
+                for i in range(len(acting_list) - 1, -1, -1):
+                    if transition_dict['actions'][i] < 34:
+                        loser = acting_list[i]
+                        break
+                if loser == -1:
+                    raise ValueError
+                wc, lc = 0, 0
+                for i in range(len(acting_list) - 1, -1, -1):
+                    if acting_list[i] == winner:
+                        transition_dict['rewards'][i] += 128 * (0.5 ** wc)
+                        wc += 1
+                    elif acting_list[i] == loser:
+                        transition_dict['rewards'][i] -= 128 * (0.5 ** lc)
+                        lc += 1
+            if action == 68:
+                winner = acting_list[-1]
+                counts = [0, 0, 0, 0]
+                for i in range(len(acting_list) - 1, -1, -1):
+                    if acting_list[i] == winner:
+                        transition_dict['rewards'][i] += 3 * 128 * (0.5 ** counts[winner])
+                    else:
+                        transition_dict['rewards'][i] -= 128 * (0.5 ** counts[acting_list[i]])
+                    counts[acting_list[i]] += 1
             # if action == 74:  # revise the reward of chucking player
             #     for i in range(len(transition_dict['states']) - 1, -1, -1):
             #         if transition_dict['actions'][i] < 34:
