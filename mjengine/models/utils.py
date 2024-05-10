@@ -96,7 +96,7 @@ def find_last_discard(state: np.ndarray) -> int:
     return tile
 
 
-LATEST_ENCODING_VERSION = "0.2.0a"
+LATEST_ENCODING_VERSION = "1.0.0"
 
 
 def game_dict_to_numpy(

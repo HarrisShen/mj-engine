@@ -114,7 +114,7 @@ def setup_load() -> dict:
 def setup_env() -> dict:
     print("=" * 20 + " Environment params " + "=" * 20)
     version = input(f"Game state encoding version (default {LATEST_ENCODING_VERSION}): ")
-    if version not in ["0.1.1", "0.1.2", "0.2.0", "0.2.0a"]:
+    if version not in ["0.1.1", "0.1.2", "0.2.0", "0.2.0a", "1.0.0"]:
         print(f"Using default value {LATEST_ENCODING_VERSION}")
         version = LATEST_ENCODING_VERSION
     return {"env_params": {"encoding_version": version}}
@@ -161,11 +161,14 @@ def setup_ppo(load_settings: dict | None = None) -> dict:
     print("=" * 20 + " PPO params " + "=" * 20)
     if load_settings is None:
         hidden_dim = numeric_input("Hidden dimension", int, default=256, min_val=1)
+        conv_layer = numeric_input("Number of convolutional layer", int, default=1)
         hidden_layer = numeric_input("Number of hidden layer", int, default=1, min_val=1)
     else:
         hidden_dim = load_settings["agent_params"]["hidden_dim"]
+        conv_layer = load_settings["agent_params"]["conv_layer"]
         hidden_layer = load_settings["agent_params"]["hidden_layer"]
         print(f"Hidden dimension: {hidden_dim}")
+        print(f"Number of conv. layer: {conv_layer}")
         print(f"Number of hidden layer: {hidden_layer}")
     actor_lr = unit_interval_input("Initial learning rate of actor", default=1e-4)
     critic_lr = unit_interval_input("Initial learning rate of critic", default=1e-3)
@@ -174,7 +177,7 @@ def setup_ppo(load_settings: dict | None = None) -> dict:
     lmbda = unit_interval_input("Lambda", default=0.95)
     gamma = unit_interval_input("Gamma", default=0.98)
     eps = unit_interval_input("Epsilon for clip", default=0.2)
-    epochs = numeric_input("Number of epochs", int, default=10, min_val=1)
+    epochs = numeric_input("Number of epochs", int, default=3, min_val=1)
 
     device = "cpu"
     if torch.cuda.is_available():
@@ -182,6 +185,7 @@ def setup_ppo(load_settings: dict | None = None) -> dict:
 
     return {
         "agent_params": {
+            "conv_layer": conv_layer,
             "hidden_dim": hidden_dim,
             "hidden_layer": hidden_layer,
             "actor_lr": actor_lr,

@@ -1,5 +1,8 @@
+import math
+
 import torch
-from torch.nn import ModuleList, Linear, functional as F, Module, Conv1d, MaxPool1d
+from torch.nn import ModuleList, Linear, functional as F, Module, Conv1d, MaxPool1d, Flatten, Sequential, ReLU, Softmax, \
+    BatchNorm1d
 
 
 class QNet(Module):
@@ -59,31 +62,57 @@ class PolicyNet(torch.nn.Module):
     """
     Source: https://hrl.boyuai.com/chapter/2/ppo%E7%AE%97%E6%B3%95/
     """
-    def __init__(self, state_dim, hidden_dim, action_dim, hidden_layer=1):
+    def __init__(self, state_dim, hidden_dim, action_dim, conv_layer=1, hidden_layer=1):
         super(PolicyNet, self).__init__()
+        self.conv_layer = conv_layer
         self.hidden_layer = hidden_layer
-        self.layers = ModuleList([Linear(state_dim, hidden_dim)])
-        self.layers.extend([Linear(hidden_dim, hidden_dim) for _ in range(self.hidden_layer - 1)])
-        self.layers.append(Linear(hidden_dim, action_dim))
+        conv_channels = math.ceil(hidden_dim / 34)
+        conv_layers = [
+            Conv1d(state_dim[0], conv_channels, kernel_size=3, padding=1),
+            BatchNorm1d(conv_channels, eps=1e-5, momentum=0.001),
+            ReLU()
+        ]
+        for _ in range(conv_layer - 1):
+            conv_layers += [
+                Conv1d(conv_channels, conv_channels, kernel_size=3, padding=1),
+                BatchNorm1d(conv_channels, eps=1e-5, momentum=0.001),
+                ReLU()
+            ]
+        fc_layers = [Linear(conv_channels * 34, hidden_dim)]
+        for _ in range(hidden_layer - 1):
+            fc_layers += [ReLU(), Linear(hidden_dim, hidden_dim)]
+        fc_layers += [ReLU(), Linear(hidden_dim, action_dim)]
+        self.net = Sequential(*conv_layers, Flatten(), *fc_layers, Softmax(dim=-1))
 
     def forward(self, x):
-        for i in range(len(self.layers) - 1):
-            x = F.relu(self.layers[i](x))
-        return F.softmax(self.layers[-1](x), dim=-1)
+        return self.net(x)
 
 
 class ValueNet(torch.nn.Module):
     """
     Source: https://hrl.boyuai.com/chapter/2/ppo%E7%AE%97%E6%B3%95/
     """
-    def __init__(self, state_dim, hidden_dim, hidden_layer=1):
+    def __init__(self, state_dim, hidden_dim, conv_layer=1, hidden_layer=1):
         super(ValueNet, self).__init__()
+        self.conv_layer = conv_layer
         self.hidden_layer = hidden_layer
-        self.layers = ModuleList([Linear(state_dim, hidden_dim)])
-        self.layers.extend([Linear(hidden_dim, hidden_dim) for _ in range(self.hidden_layer - 1)])
-        self.layers.append(Linear(hidden_dim, 1))
+        conv_channels = math.ceil(hidden_dim / 34)
+        conv_layers = [
+            Conv1d(state_dim[0], conv_channels, kernel_size=3, padding=1),
+            BatchNorm1d(conv_channels, eps=1e-5, momentum=0.001),
+            ReLU()
+        ]
+        for _ in range(conv_layer - 1):
+            conv_layers += [
+                Conv1d(conv_channels, conv_channels, kernel_size=3, padding=1),
+                BatchNorm1d(conv_channels, eps=1e-5, momentum=0.001),
+                ReLU()
+            ]
+        fc_layers = [Linear(conv_channels * 34, hidden_dim)]
+        for _ in range(hidden_layer - 1):
+            fc_layers += [ReLU(), Linear(hidden_dim, hidden_dim)]
+        fc_layers += [ReLU(), Linear(hidden_dim, 1)]
+        self.net = Sequential(*conv_layers, Flatten(), *fc_layers)
 
     def forward(self, x):
-        for i in range(len(self.layers) - 1):
-            x = F.relu(self.layers[i](x))
-        return self.layers[-1](x)
+        return self.net(x)

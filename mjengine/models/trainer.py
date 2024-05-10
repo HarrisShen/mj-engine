@@ -101,6 +101,9 @@ class Trainer:
                 for j in range(j0, epi_per_cp):
                     if self.stopped:
                         break
+
+                    torch.cuda.empty_cache()
+
                     episode_return, episode_actions = step_method()
                     self.return_list.append(episode_return)
                     self.n_action_list.append(episode_actions)
@@ -310,7 +313,7 @@ class Trainer:
     @staticmethod
     def from_settings(settings, out_dir=".", save_settings=True):
         env = MahjongEnv(**settings["env_params"])
-        state_dim = len(env.encode_state())
+        state_dim = env.encode_state().shape
         action_dim = env.action_space.shape[0]
         print(f"State dim: {state_dim}, Action dim: {action_dim}")
 

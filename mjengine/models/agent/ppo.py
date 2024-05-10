@@ -41,20 +41,21 @@ class PPO(Agent):
     Source: https://hrl.boyuai.com/chapter/2/ppo%E7%AE%97%E6%B3%95/
     """
     def __init__(
-            self, state_dim, hidden_dim, action_dim, hidden_layer,
-            actor_lr, critic_lr, lr_schedule, clip_grad,
-            lmbda, epochs, eps, gamma, device, train=True):
+            self, state_dim, hidden_dim, action_dim, conv_layer, hidden_layer,
+            actor_lr, critic_lr, lr_schedule, clip_grad, lmbda, epochs,
+            eps, gamma, device, train=True):
         super().__init__(on_policy=True, device=device, train=train)
 
         self.state_dim = state_dim
         self.hidden_dim = hidden_dim
         self.action_dim = action_dim
+        self.conv_layer = conv_layer
         self.hidden_layer = hidden_layer
 
         self.actor_lr = actor_lr
         self.critic_lr = critic_lr
-        self.actor = PolicyNet(state_dim, hidden_dim, action_dim, hidden_layer).to(device)
-        self.critic = ValueNet(state_dim, hidden_dim, hidden_layer).to(device)
+        self.actor = PolicyNet(state_dim, hidden_dim, action_dim, conv_layer, hidden_layer).to(device)
+        self.critic = ValueNet(state_dim, hidden_dim, conv_layer, hidden_layer).to(device)
         self.actor_optimizer = torch.optim.AdamW(self.actor.parameters(),
                                                  lr=actor_lr)
         self.critic_optimizer = torch.optim.AdamW(self.critic.parameters(),
@@ -72,10 +73,10 @@ class PPO(Agent):
         self.eps = eps  # PPO clip range
 
     def take_action(self, state, option):
-        state = torch.from_numpy(state.astype(np.float32)).to(self.device)
+        state = torch.from_numpy(state.astype(np.float32)).unsqueeze(0).to(self.device)
         # zero out illegal actions, then normalize probs to sum 1
         option = torch.from_numpy(option.astype(np.float32)).to(self.device)
-        probs = self.actor(state) * option
+        probs = self.actor(state).flatten() * option
         prob_sum = probs.sum(dim=-1)
         if prob_sum == 0:
             probs = option / option.sum(dim=-1)
